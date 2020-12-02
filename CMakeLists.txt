@@ -79,6 +79,7 @@ if(CATKIN_ENABLE_TESTING)
     catkin_add_gtest(${PROJECT_NAME}_gtest 
         test/draw_polygon.cpp
         test/euclidean_distance_transform.cpp
+        test/get_circular_cells.cpp
         test/get_derivatives.cpp)
     if(TARGET ${PROJECT_NAME}_gtest)
         target_link_libraries(${PROJECT_NAME}_gtest ${PROJECT_NAME})

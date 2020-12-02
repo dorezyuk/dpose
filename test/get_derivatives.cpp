@@ -8,7 +8,9 @@ TEST(get_derivatives, generic) {
   cell_type origin;
   const auto im1 = draw_polygon(cells, origin);
   const auto im2 = euclidean_distance_transform(im1);
-  const auto d = get_derivatives(im2, origin);
+  const auto d = init_derivatives(im2, origin);
+
+  // todo fix this test
 
   cv::imwrite("dx.png", d.dx + cv::Scalar(100));
   cv::imwrite("dy.png", d.dy);

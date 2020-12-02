@@ -48,16 +48,14 @@ draw_polygon(const cell_vector_type& _cells, cell_type& _shift);
 cv::Mat
 euclidean_distance_transform(cv::InputArray _image);
 
+cell_vector_type
+get_circular_cells(const cell_type& _center, int _radius);
+
 cv::Mat
 angular_derivative(cv::InputArray _image, const cell_type& _center);
 
 /**
  * @brief POD holding the derivatives
- *
- * The dx and dy are straight forward. We are using a Sobel operator from
- * opencv to get the values (see
- * https://docs.opencv.org/master/d4/d86/group__imgproc__filter.html#gacea54f142e81b6758cb6f375ce782c8d)
- *
  */
 struct derivatives {
   cv::Mat dx;        ///< derivative in x
@@ -67,15 +65,25 @@ struct derivatives {
 };
 
 derivatives
-get_derivatives(cv::InputArray _image, const cell_type& _center);
+init_derivatives(cv::InputArray _image, const cell_type& _center);
 
 /**
  * @brief Highest api level for the user to the get the derivatives
- * 
- * @param _cells 
- * @return derivatives 
+ *
+ * @param _cells
+ * @return derivatives
  */
 derivatives
-get_derivatives(const cell_vector_type & _cells);
+init_derivatives(const cell_vector_type& _cells);
+
+using cost_type = cv::Scalar_<float>;
+
+/**
+ */
+cost_type
+get_derivative(const derivatives& _data, const cell_vector_type& _cells);
+
+float
+get_cost(const cv::Mat& _data, const cell_vector_type& _cells);
 
 }  // namespace laces

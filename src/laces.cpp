@@ -122,12 +122,57 @@ euclidean_distance_transform(cv::InputArray _image) {
   return edt;
 }
 
+double
+max_distance(cv::InputArray _image, const cell_type& cell) {
+  const auto m = _image.getMat();
+  // get the corners
+  std::array<cell_type, 4> corners{cell_type{0, 0}, cell_type{0, m.rows},
+                                   cell_type{m.cols, 0},
+                                   cell_type{m.cols, m.rows}};
+
+  // get the closest distance
+  auto dist = 0.;
+  for (const auto& corner : corners)
+    dist = std::max(cv::norm(corner - cell), dist);
+
+  return dist;
+}
+
+cv::Mat
+angular_derivative(cv::InputArray _image, const cell_type& _center) {
+  // todo - this is not the end, but we are too lazy to deal with it now.
+  // we would have to shift the image later...
+  if (_center.x > 0 || _center.y > 0)
+    throw std::invalid_argument("invalid center cell");
+
+  const cell_type center = -_center;
+
+  // get the distance
+  // todo this must never get negative...
+  const auto distance = static_cast<size_t>(max_distance(_image, center));
+
+
+
+}
+
 derivatives
-get_derivatives(cv::InputArray _image) {
+get_derivatives(cv::InputArray _image, const cell_type& _center) {
   derivatives d;
+
+  // x and y derivatives are really easy...
   cv::Sobel(_image, d.dx, cv::DataType<float>::type, 1, 0, 3, 10);
   cv::Sobel(_image, d.dy, cv::DataType<float>::type, 0, 1, 3, 10);
+  d.center = _center;
+  // d.dtheta = angular_derivative(_image, _center);
   return d;
+}
+
+derivatives
+get_derivatives(const cell_vector_type& _cells) {
+  cell_type center;
+  const auto im1 = draw_polygon(_cells, center);
+  const auto im2 = euclidean_distance_transform(im1);
+  return get_derivatives(im2, center);
 }
 
 }  // namespace laces

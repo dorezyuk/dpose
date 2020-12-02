@@ -60,10 +60,22 @@ angular_derivative(cv::InputArray _image, const cell_type& _center);
  *
  */
 struct derivatives {
-  cv::Mat dx, dy, dtheta;
+  cv::Mat dx;        ///< derivative in x
+  cv::Mat dy;        ///< derivative in y
+  cv::Mat dtheta;    ///< derivative in theta
+  cell_type center;  ///< center of rotation
 };
 
 derivatives
-get_derivatives(cv::InputArray _image);
+get_derivatives(cv::InputArray _image, const cell_type& _center);
+
+/**
+ * @brief Highest api level for the user to the get the derivatives
+ * 
+ * @param _cells 
+ * @return derivatives 
+ */
+derivatives
+get_derivatives(const cell_vector_type & _cells);
 
 }  // namespace laces

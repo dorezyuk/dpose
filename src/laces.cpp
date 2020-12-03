@@ -148,8 +148,13 @@ max_distance(cv::InputArray _image, const cell_type& _cell) {
   return dist;
 }
 
+/**
+ * @brief helper to prune repetitions from get_circular_cells
+ *
+ * @param _cells the pre-output from get_circular_cells
+ */
 void
-unique_cells(cell_vector_type& _cells) {
+unique_cells(cell_vector_type& _cells) noexcept {
   if (_cells.empty())
     return;
   // use first unique to remove the overlaps
@@ -181,10 +186,8 @@ get_circular_cells(const cell_type& _center, int _radius) {
     octet->emplace_back(_center.x + y, _center.y + x); ++octet;
     octet->emplace_back(_center.x - y, _center.y + x); ++octet;
     octet->emplace_back(_center.x - x, _center.y + y); ++octet;
-
     octet->emplace_back(_center.x - x, _center.y - y); ++octet;
     octet->emplace_back(_center.x - y, _center.y - x); ++octet;
-
     octet->emplace_back(_center.x + y, _center.y - x); ++octet;
     octet->emplace_back(_center.x + x, _center.y - y); ++octet;
     // clang-format on
@@ -217,6 +220,29 @@ get_circular_cells(const cell_type& _center, int _radius) {
   return cells;
 }
 
+/**
+ * @brief calculates the angular gradient given a _prev and _next cell.
+ * 
+ * It is expected that _image and _source have the same size.
+ * The method is helper for angular_derivative.
+ *
+ * @param _prev previous cell on a circle
+ * @param _curr the cell of interest of a circle
+ * @param _next next cell on a circle
+ * @param _image image where to store the gradient
+ * @param _source image based on which we are computing the gradient
+ */
+void
+mark_gradient(const cell_type& _prev, const cell_type& _curr,
+              const cell_type& _next, cv::Mat& _image, const cv::Mat& _source) {
+  // skip if not all are valid
+  if (is_valid(_curr, _image) && is_valid(_prev, _source) &&
+      is_valid(_next, _source)) {
+    _image.at<float>(_curr) =
+        _source.at<float>(_prev) - _source.at<float>(_next);
+  }
+}
+
 cv::Mat
 angular_derivative(cv::InputArray _image, const cell_type& _center) {
   // todo - this is not the end, but we are too lazy to deal with it now.
@@ -227,9 +253,38 @@ angular_derivative(cv::InputArray _image, const cell_type& _center) {
   const cell_type center = -_center;
 
   // get the distance
-  // todo this must never get negative...
-  const auto distance = static_cast<size_t>(max_distance(_image, center));
-  return cv::Mat();
+  // to be really safe against numeric issues we cast to int and not size_t
+  const auto distance = static_cast<int>(max_distance(_image, center));
+
+  // init the output image
+  cv::Mat output(_image.size(), cv::DataType<float>::type, cv::Scalar(0));
+  cv::Mat source = _image.getMat();
+
+  // now iterate over the all steps
+  for (int ii = 0; ii <= distance; ++ii) {
+    const auto cells = get_circular_cells(_center, ii);
+
+    // now we loop over the cells and get the gradient
+    // we will need at least three points for this
+    if (cells.size() < 3)
+      continue;
+
+    // beginning and end are special
+    mark_gradient(*cells.rbegin(), *cells.begin(), *std::next(cells.begin()),
+                  output, source);
+
+    // iterate over all consecutive cells
+    for (auto prev = cells.begin(), curr = std::next(prev),
+              next = std::next(curr);
+         next != cells.end(); ++prev, ++curr, ++next)
+      mark_gradient(*prev, *curr, *next, output, source);
+
+    // now do the end
+    mark_gradient(*std::next(cells.rbegin()), *cells.rbegin(), *cells.begin(),
+                  output, source);
+  }
+
+  return output;
 }
 
 /**
@@ -243,7 +298,7 @@ init_derivatives(cv::InputArray _image, const cell_type& _center) {
   cv::Sobel(_image, d.dx, cv::DataType<float>::type, 1, 0, 3, 10);
   cv::Sobel(_image, d.dy, cv::DataType<float>::type, 0, 1, 3, 10);
   d.center = _center;
-  // d.dtheta = angular_derivative(_image, _center);
+  d.dtheta = angular_derivative(_image, _center);
   return d;
 }
 

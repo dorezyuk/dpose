@@ -5,37 +5,51 @@ using namespace laces;
 
 // file contains tests of the get_circular_cells function
 
-TEST(get_circular_cells, zero) {
-  // in the zero case, we want just to return the center cell
-  const cell_type center(0, 0);
-  const auto cells = get_circular_cells(center, 0);
-  ASSERT_FALSE(cells.empty());
+// force internal binding, so we dont get conflicting names
+namespace {
 
-  // note: duplicates are ok for now
-  for (const auto& cell : cells)
-    ASSERT_EQ(cell, center);
+// parameter POD with input and expected output
+struct parameter {
+  int radius;
+  cell_vector_type expected;
+};
+
+// setup the regression input and results
+parameter params[] = {
+    parameter{0, {cell_type{0, 0}}},
+    parameter{
+        1,
+        {cell_type{1, 0}, cell_type{0, 1}, cell_type{-1, 0}, cell_type{0, -1}}},
+    parameter{2,
+              {cell_type{2, 0}, cell_type{1, 1}, cell_type{0, 2},
+               cell_type{-1, 1}, cell_type{-2, 0}, cell_type{-1, -1},
+               cell_type{0, -2}, cell_type{1, -1}}},
+    parameter{
+        3,
+        {cell_type{3, 0}, cell_type{2, 1}, cell_type{2, 2}, cell_type{1, 2},
+         cell_type{0, 3}, cell_type{-1, 2}, cell_type{-2, 2}, cell_type{-2, 1},
+         cell_type{-3, 0}, cell_type{-2, -1}, cell_type{-2, -2},
+         cell_type{-1, -2}, cell_type{0, -3}, cell_type{1, -2},
+         cell_type{2, -2}, cell_type{2, -1}}}};
+
+using testing::TestWithParam;
+using testing::ValuesIn;
+
+// simple test-fixture
+struct get_circular_cells_fixture : public TestWithParam<parameter> {};
+
+INSTANTIATE_TEST_CASE_P(/**/, get_circular_cells_fixture, ValuesIn(params));
+
+TEST_P(get_circular_cells_fixture, regression) {
+  // get the params
+  const auto param = GetParam();
+  const cell_type center(0, 0);
+
+  // call the function
+  const auto cells = get_circular_cells(center, param.radius);
+
+  // check the result
+  ASSERT_EQ(cells, param.expected);
 }
 
-TEST(get_circular_cells, one) {
-  const cell_type center(0, 0);
-  const auto cells = get_circular_cells(center, 1);
-  ASSERT_FALSE(cells.empty());
-
-  // assemble the expected array
-  const cell_vector_type expected = {cell_type{1, 0}, cell_type{0, 1},
-                                     cell_type{-1, 0}, cell_type{0, -1}};
-
-  ASSERT_EQ(cells, expected);
-}
-
-TEST(get_circular_cells, two) {
-  const cell_type center(0, 0);
-  const auto cells = get_circular_cells(center, 2);
-  ASSERT_FALSE(cells.empty());
-
-  const cell_vector_type expected = {
-      cell_type{2, 0},  cell_type{1, 1},   cell_type{0, 2},  cell_type{-1, 1},
-      cell_type{-2, 0}, cell_type{-1, -1}, cell_type{0, -2}, cell_type{1, -1}};
-
-  ASSERT_EQ(cells, expected);
-}
+}  // namespace

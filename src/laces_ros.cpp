@@ -1,36 +1,30 @@
 #include <laces/laces_ros.hpp>
 
+#include <algorithm>
+#include <cmath>
+
 namespace laces {
 
-// helpers
-using point_msg = geometry_msgs::Point;
+cell_vector_type
+to_cells(const polygon_msg& _footprint, double _resolution) {
+  // we have standards...
+  if(_resolution <= 0)
+    throw std::runtime_error("resolution must be positive");
 
-inline point_type
-get_point(const point_msg& _msg) noexcept {
-  return {_msg.x, _msg.y};
+  cell_vector_type cells(_footprint.size());
+  std::transform(_footprint.begin(), _footprint.end(), cells.begin(),
+                 [&](const polygon_msg::value_type& __msg) {
+                   // round to avoid unfair casting
+                   return cell_type{std::round(__msg.x / _resolution),
+                                    std::round(__msg.y / _resolution)};
+                 });
+  return cells;
 }
 
-polygon_type::ring_type
-get_ring(const polygon_msg& _msg) noexcept {
-  // create the ring
-  polygon_type::ring_type ring;
-  ring.resize(_msg.size());
 
-  // transform the message
-  std::transform(_msg.begin(), _msg.end(), ring.begin(), get_point);
+laces_ros::laces_ros(const costmap_2d::LayeredCostmap& _lcm) {}
 
-  return ring;
-}
-
-polygon_type
-get_polygon(const polygon_msg& _msg) noexcept {
-  polygon_type p;
-  p.outer() = get_ring(_msg);
-
-  // correct the polygon
-  bg::correct(p);
-
-  return p;
-}
+laces_ros::laces_ros(const costmap_2d::Costmap2D& _cm,
+                     const polygon_msg& _footprint) {}
 
 }  // namespace laces

@@ -19,9 +19,7 @@ using polygon_type = bg::model::polygon<point_type>;
 using cell_type = cv::Point2i;
 using cell_vector_type = std::vector<cell_type>;
 
-/**
- * @brief POD holding the derivatives
- */
+/// @brief POD holding the derivatives
 struct derivatives {
   cv::Mat dx;        ///< derivative in x
   cv::Mat dy;        ///< derivative in y
@@ -41,7 +39,7 @@ namespace internal {
  * The function will shift the origin such that the smallest cell in _cells is
  * [0, 0]. The origin is then moved by new_origin = old_origin - _shift.
  *
- * @param[in] _cells an (open) polygon
+ * @param[in] _cells an polygon
  * @param[out] _shift shifted origin of the _cells
  *
  * @return cv::Mat image showing the polygon
@@ -89,6 +87,13 @@ get_circular_cells(const cell_type& _center, size_t _radius) noexcept;
 cv::Mat
 angular_derivative(cv::InputArray _image, const cell_type& _center);
 
+/**
+ * @brief Helper function to create the derivatives from an image.
+ *
+ * @param _image image for the derivative calculation
+ * @param _center center of rotation
+ * @return derivatives
+ */
 derivatives
 init_derivatives(cv::InputArray _image, const cell_type& _center);
 

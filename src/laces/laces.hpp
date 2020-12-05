@@ -79,6 +79,11 @@ init_derivatives(const cell_vector_type& _cells);
 using cost_type = cv::Scalar_<float>;
 
 /**
+ * @brief Get the derivative object
+ *
+ * @param _data
+ * @param _cells
+ * @return cost_type
  */
 cost_type
 get_derivative(const derivatives& _data, const cell_vector_type& _cells);

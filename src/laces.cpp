@@ -222,9 +222,9 @@ get_circular_cells(const cell_type& _center, int _radius) {
 
 /**
  * @brief calculates the angular gradient given a _prev and _next cell.
- * 
+ *
  * It is expected that _image and _source have the same size.
- * The method is helper for angular_derivative.
+ * The method is a helper for angular_derivative.
  *
  * @param _prev previous cell on a circle
  * @param _curr the cell of interest of a circle
@@ -295,8 +295,8 @@ init_derivatives(cv::InputArray _image, const cell_type& _center) {
   derivatives d;
 
   // x and y derivatives are really easy...
-  cv::Sobel(_image, d.dx, cv::DataType<float>::type, 1, 0, 3, 10);
-  cv::Sobel(_image, d.dy, cv::DataType<float>::type, 0, 1, 3, 10);
+  cv::Sobel(_image, d.dx, cv::DataType<float>::type, 1, 0, 3);
+  cv::Sobel(_image, d.dy, cv::DataType<float>::type, 0, 1, 3);
   d.center = _center;
   d.dtheta = angular_derivative(_image, _center);
   return d;

@@ -12,7 +12,5 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
-        with:
-          submodules: recursive
       - uses: 'ros-industrial/industrial_ci@master'
         env: ${{matrix.env}}

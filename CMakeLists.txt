@@ -11,6 +11,7 @@ catkin_package(
  INCLUDE_DIRS src
  LIBRARIES ${PROJECT_NAME}_ros
  CATKIN_DEPENDS ${CATKIN_PACKAGES}
+ DEPENDS OpenCV
 )
 message(${OpenCV_INCLUDE_DIRS})
 

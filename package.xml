@@ -10,5 +10,6 @@
 
   <buildtool_depend>catkin</buildtool_depend>
   <depend>costmap_2d</depend>
-
+  <depend>boost</depend>
+  <depend>libopencv-dev</depend>
 </package>

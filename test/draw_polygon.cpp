@@ -2,6 +2,7 @@
 #include <gtest/gtest.h>
 
 using namespace laces;
+using namespace laces::internal;
 
 // tests for the draw-polygon function
 

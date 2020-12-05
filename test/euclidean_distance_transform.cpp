@@ -2,6 +2,7 @@
 #include <gtest/gtest.h>
 
 using namespace laces;
+using namespace laces::internal;
 
 TEST(euclidean_distance_transform, simple) {
   // setup the image with a polygon

@@ -4,6 +4,7 @@
 #include <opencv2/imgproc.hpp>
 
 using namespace laces;
+using namespace laces::internal;
 
 TEST(get_derivatives, x_line) {
   cv::Mat image(20, 20, cv::DataType<uint8_t>::type, cv::Scalar(0));

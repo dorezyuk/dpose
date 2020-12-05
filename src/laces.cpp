@@ -10,6 +10,7 @@
 #include <vector>
 
 namespace laces {
+namespace internal {
 
 cv::Mat
 draw_polygon(const cell_vector_type& _cells, cell_type& _shift) {
@@ -79,7 +80,7 @@ euclidean_distance_transform(cv::InputArray _image) {
   // todo make sure that this is a shallow copy
   const auto mat = _image.getMat();
 
-  // init the curr wave
+  // init the curr(ent) wave
   std::vector<voronoi_cell> curr(seen_cells.size()), next;
   std::transform(seen_cells.begin(), seen_cells.end(), curr.begin(),
                  [](const cell_type& __cell) {
@@ -168,7 +169,7 @@ unique_cells(cell_vector_type& _cells) noexcept {
 }
 
 cell_vector_type
-get_circular_cells(const cell_type& _center, int _radius) {
+get_circular_cells(const cell_type& _center, size_t _radius) noexcept {
   // adjusted from
   // https://github.com/opencv/opencv/blob/master/modules/imgproc/src/drawing.cpp
   int x = _radius, y = 0;
@@ -176,10 +177,9 @@ get_circular_cells(const cell_type& _center, int _radius) {
 
   std::array<cell_vector_type, 8> octets;
 
-  // the order is
-  // [[x,y], [y, x], [y, -x], [-x, y], [-x, -y], [-y, -x], [-y, x],  [x, -y]]
   while (x >= y) {
     // insert the octets - for now without fancy looping
+    // note: the order of these octets is very important
     auto octet = octets.begin();
     // clang-format off
     octet->emplace_back(_center.x + x, _center.y + y); ++octet;
@@ -234,7 +234,8 @@ get_circular_cells(const cell_type& _center, int _radius) {
  */
 void
 mark_gradient(const cell_type& _prev, const cell_type& _curr,
-              const cell_type& _next, cv::Mat& _image, const cv::Mat& _source) {
+              const cell_type& _next, cv::Mat& _image,
+              const cv::Mat& _source) noexcept {
   // skip if not all are valid
   if (is_valid(_curr, _image) && is_valid(_prev, _source) &&
       is_valid(_next, _source)) {
@@ -302,12 +303,14 @@ init_derivatives(cv::InputArray _image, const cell_type& _center) {
   return d;
 }
 
+}  // namespace internal
+
 derivatives
 init_derivatives(const cell_vector_type& _cells) {
   cell_type center;
-  const auto im1 = draw_polygon(_cells, center);
-  const auto im2 = euclidean_distance_transform(im1);
-  return init_derivatives(im2, center);
+  const auto im1 = internal::draw_polygon(_cells, center);
+  const auto im2 = internal::euclidean_distance_transform(im1);
+  return internal::init_derivatives(im2, center);
 }
 
 /**
@@ -315,7 +318,7 @@ init_derivatives(const cell_vector_type& _cells) {
  */
 inline cost_type
 get_derivative(const derivatives& _data, const cell_type& _cell) {
-  if (!is_valid(_cell, _data.dx))
+  if (!internal::is_valid(_cell, _data.dx))
     return {0, 0, 0};
 
   return {_data.dx.at<float>(_cell), _data.dy.at<float>(_cell),
@@ -333,12 +336,12 @@ get_derivative(const derivatives& _data, const cell_vector_type& _cells) {
 }
 
 /**
- * @brief todo document me
+ * @brief TODO document me
  */
 inline float
 get_cost(const cv::Mat& _data, const cell_type& _cell) {
   // invalid cells are ok for us (the image might be rotated...)
-  if (!is_valid(_cell, _data))
+  if (!internal::is_valid(_cell, _data))
     return 0;
   return _data.at<float>(_cell);
 }

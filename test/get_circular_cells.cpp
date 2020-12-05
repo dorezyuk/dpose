@@ -2,6 +2,7 @@
 #include <gtest/gtest.h>
 
 using namespace laces;
+using namespace laces::internal;
 
 // file contains tests of the get_circular_cells function
 

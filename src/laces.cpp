@@ -13,10 +13,15 @@ namespace laces {
 namespace internal {
 
 cv::Mat
-draw_polygon(const cell_vector_type& _cells, cell_type& _shift) {
+draw_polygon(const cell_vector_type& _cells, cell_type& _shift,
+             const cell_type& _padding) {
   // we need an area - so at least three points
   if (_cells.size() < 3)
     throw std::invalid_argument("cells must define a valid area");
+
+  // negative padding might result in a bad image.
+  if (_padding.x < 0 || _padding.y < 0)
+    throw std::invalid_argument("padding cannot be negative");
 
   cv::Rect2d bb = cv::boundingRect(_cells);
 
@@ -24,13 +29,16 @@ draw_polygon(const cell_vector_type& _cells, cell_type& _shift) {
   if (bb.empty())
     throw std::invalid_argument("bb cannot be empty");
 
+  // apply padding to the bounding box
+  cv::Rect2i bbi(static_cast<cell_type>(bb.tl()) - _padding,
+                 static_cast<cell_type>(bb.br()) + _padding);
   // setup the image
   cv::Scalar s(0);
-  cv::Mat image(bb.size(), cv::DataType<uint8_t>::type, s);
+  cv::Mat image(bbi.size(), cv::DataType<uint8_t>::type, s);
 
   // it may be that the _cells contain negative numbers - we cannot draw them
   // so we have to shift everything by the lower left corner of the bounding box
-  _shift = static_cast<cell_type>(bb.tl());
+  _shift = bbi.tl();
   auto shifted_cells = _cells;
   for (auto& cell : shifted_cells)
     cell -= _shift;

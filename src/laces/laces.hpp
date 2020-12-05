@@ -40,13 +40,16 @@ namespace internal {
  * [0, 0]. The origin is then moved by new_origin = old_origin - _shift.
  *
  * @param[in] _cells an polygon
+ * @param[in] _padding optional padding to each side. padding cannot be
+ * negative.
  * @param[out] _shift shifted origin of the _cells
  *
  * @return cv::Mat image showing the polygon
- * @throw std::invalid_argument if _cells is empty
+ * @throw std::invalid_argument if _cells is empty or if padding is negative
  */
 cv::Mat
-draw_polygon(const cell_vector_type& _cells, cell_type& _shift);
+draw_polygon(const cell_vector_type& _cells, cell_type& _shift,
+             const cell_type& _padding = cell_type(0, 0));
 
 /**
  * @brief Returns a edt from the input image.

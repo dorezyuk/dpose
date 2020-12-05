@@ -77,6 +77,30 @@ TEST(draw_polygon, negative) {
   ASSERT_EQ(origin, cell_type(-4, -5));
 }
 
+namespace {
+
+// enforce internal binding so we can resuse names
+
+struct draw_polygon_padding_fixture : public TestWithParam<cell_type> {};
+
+INSTANTIATE_TEST_CASE_P(/**/, draw_polygon_padding_fixture,
+                        Values(cell_type(1, 2), cell_type(4, 3),
+                               cell_type(10, 2)));
+
+TEST_P(draw_polygon_padding_fixture, padding) {
+  // here we check the correct handling of the padding
+  cell_vector_type cells = {{1, 2}, {10, 5}, {8, 8}};
+  const cell_type padding = GetParam();
+  cell_type origin;
+  const auto image = draw_polygon(cells, origin, padding);
+
+  ASSERT_EQ(image.cols, 10 + padding.x * 2);
+  ASSERT_EQ(image.rows, 7 + padding.y * 2);
+  ASSERT_EQ(origin, cells.front() - padding);
+}
+
+}  // namespace
+
 int
 main(int argc, char** argv) {
   testing::InitGoogleTest(&argc, argv);

@@ -155,8 +155,21 @@ smoothen_edges(cv::InputArray _edt, const cell_vector_type& _cells) {
 
   // get the mask of the polygon defined by cells
   cv::Mat mask(edt.size(), cv::DataType<uint8_t>::type, cv::Scalar(0));
-  cv::fillPoly(mask, _cells, cv::Scalar(255));
-  return mask;
+
+  // sadly we have to copy _cells here
+  std::vector<cell_vector_type> input({_cells});
+  cv::fillPoly(mask, input, cv::Scalar(255));
+
+  cv::Mat smoothen(edt.size(), cv::DataType<float>::type, cv::Scalar(0));
+  // paint the polygon
+  // todo fix these constants
+  cv::polylines(smoothen, input, true, cv::Scalar(2));
+  cv::GaussianBlur(smoothen, smoothen, cv::Size(5, 5), 0);
+
+  // copy the input
+  cv::copyTo(edt, smoothen, mask);
+
+  return smoothen;
 }
 
 /**

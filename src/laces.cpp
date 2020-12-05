@@ -383,6 +383,10 @@ get_derivative(const derivatives& _data, const cell_vector_type& _cells) {
   for (const auto& cell : _cells)
     out += get_derivative(_data, cell);
 
+  // norm the output
+  // todo check this
+  if (!_cells.empty())
+    out = out / cost_type(_cells.size(), _cells.size(), _cells.size());
   return out;
 }
 

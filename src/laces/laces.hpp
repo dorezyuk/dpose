@@ -52,6 +52,16 @@ draw_polygon(const cell_vector_type& _cells, cell_type& _shift,
 cv::Mat
 euclidean_distance_transform(cv::InputArray _image);
 
+/**
+ * @brief Post-processing function.
+ *
+ * We will add a small gaussian blur at the edges of the polygon, so the
+ * derivative is a little friendlier for the optimizers.
+ *
+ * @param _image original image
+ * @param _cells outline of the polygon
+ * @return cv::Mat smoothed image
+ */
 cv::Mat
 smoothen_edges(cv::InputArray _image, const cell_vector_type& _cells);
 

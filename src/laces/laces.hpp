@@ -1,20 +1,9 @@
 #pragma once
 
-// we will use boost::geometry for representing and manipulating the footprint
-#include <boost/geometry/geometries/point_xy.hpp>
-#include <boost/geometry/geometries/polygon.hpp>
-#include <boost/geometry/geometry.hpp>
-
 #include <opencv2/imgproc.hpp>
 #include <opencv2/opencv.hpp>
 
 namespace laces {
-
-// define the boost types
-namespace bg = boost::geometry;
-
-using point_type = bg::model::d2::point_xy<double>;
-using polygon_type = bg::model::polygon<point_type>;
 
 using cell_type = cv::Point2i;
 using cell_vector_type = std::vector<cell_type>;
@@ -40,9 +29,9 @@ namespace internal {
  * [0, 0]. The origin is then moved by new_origin = old_origin - _shift.
  *
  * @param[in] _cells an polygon
+ * @param[out] _shift shifted origin of the _cells
  * @param[in] _padding optional padding to each side. padding cannot be
  * negative.
- * @param[out] _shift shifted origin of the _cells
  *
  * @return cv::Mat image showing the polygon
  * @throw std::invalid_argument if _cells is empty or if padding is negative
@@ -62,6 +51,9 @@ draw_polygon(const cell_vector_type& _cells, cell_type& _shift,
  */
 cv::Mat
 euclidean_distance_transform(cv::InputArray _image);
+
+cv::Mat
+smoothen_edges(cv::InputArray _image, const cell_vector_type& _cells);
 
 /**
  * @brief Returns cells laying on the perimeter of a circle.

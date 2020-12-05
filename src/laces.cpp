@@ -134,6 +134,32 @@ euclidean_distance_transform(cv::InputArray _image) {
 }
 
 /**
+ * @brief Helper to shift all cells by _shift
+ *
+ * @param _cells input array of cells
+ * @param _shift by how much to shift the _cells
+ */
+cell_vector_type
+shift_cells(const cell_vector_type& _cells, const cell_type& _shift) noexcept {
+  cell_vector_type shifted = _cells;
+  for (auto& cell : shifted)
+    cell += _shift;
+
+  return shifted;
+}
+
+cv::Mat
+smoothen_edges(cv::InputArray _edt, const cell_vector_type& _cells) {
+  // we will perform some operations to post-process out image
+  const auto edt = _edt.getMat();
+
+  // get the mask of the polygon defined by cells
+  cv::Mat mask(edt.size(), cv::DataType<uint8_t>::type, cv::Scalar(0));
+  cv::fillPoly(mask, _cells, cv::Scalar(255));
+  return mask;
+}
+
+/**
  * @brief Retuns the maximum euclidean distance from the cell to the image
  * corners
  *
@@ -145,9 +171,9 @@ double
 max_distance(cv::InputArray _image, const cell_type& _cell) {
   const auto m = _image.getMat();
   // get the corners
-  std::array<cell_type, 4> corners{cell_type{0, 0}, cell_type{0, m.rows},
-                                   cell_type{m.cols, 0},
-                                   cell_type{m.cols, m.rows}};
+  const std::array<cell_type, 4> corners{cell_type{0, 0}, cell_type{0, m.rows},
+                                         cell_type{m.cols, 0},
+                                         cell_type{m.cols, m.rows}};
 
   // get the closest distance
   auto dist = 0.;
@@ -315,9 +341,13 @@ init_derivatives(cv::InputArray _image, const cell_type& _center) {
 
 derivatives
 init_derivatives(const cell_vector_type& _cells) {
+  using namespace internal;
+  const cell_type padding(2, 2);
   cell_type center;
-  const auto im1 = internal::draw_polygon(_cells, center);
-  const auto im2 = internal::euclidean_distance_transform(im1);
+  const auto im1 = draw_polygon(_cells, center, padding);
+  const auto im2 = euclidean_distance_transform(im1);
+  const auto im3 = smoothen_edges(im2, shift_cells(_cells, center));
+  // todo fix im2 for im3
   return internal::init_derivatives(im2, center);
 }
 

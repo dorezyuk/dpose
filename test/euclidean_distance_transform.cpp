@@ -54,7 +54,6 @@ TEST_P(euclidean_distance_transform_fixture, regression) {
 
   // perform the edt operation
   const auto edt = euclidean_distance_transform(image);
-  cv::imwrite("test.png", edt);
 
   // check the result
   for (int rr = 0; rr != image.rows; ++rr)

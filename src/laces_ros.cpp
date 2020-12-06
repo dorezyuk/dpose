@@ -13,6 +13,10 @@ namespace laces {
 
 namespace internal {
 
+namespace {
+
+// only cpp-defined helpers
+
 /// @brief Converts a ros-point to a boost::geometry point
 inline bg_point_type
 to_bg_point(const polygon_msg::value_type& _point) noexcept {
@@ -71,12 +75,19 @@ to_bg_box(const bg_polygon_type& _polygon) {
   return bb;
 }
 
+}  // namespace
+
 bg_box_type
 to_bg_box(const polygon_msg& _msg) {
   const auto polygon = to_bg_polygon(_msg);
   return to_bg_box(polygon);
 }
 
+namespace {
+
+// only cpp-defined helpers
+
+/// @brief generates the bounding box from the costmap's bounds
 bg_box_type
 to_bg_box(const costmap_2d::Costmap2D& _cm) noexcept {
   // retrieve the end-points of the map
@@ -122,6 +133,8 @@ inline cv_box_type
 to_cv_box(const bg_box_type& _bg, const costmap_2d::Costmap2D& _cm) {
   return {to_cv_cell(_bg.min_corner(), _cm), to_cv_cell(_bg.max_corner(), _cm)};
 }
+
+}  // namespace
 
 }  // namespace internal
 
@@ -178,18 +191,15 @@ laces_ros::get_cost(const pose_msg& _msg) {
 
   // remove the part of the robot_bb outside of the map
   const auto map_bb = to_bg_box(*cm_);
-  std::vector<bg_box_type> union_bb;
-  // bg::union_(robot_bb, map_bb, union_bb);
 
   // the entire robot is outside of the map
-  if (union_bb.empty())
+  if (!bg::intersects(robot_bb, map_bb))
     return 0;
-
-  // this should not happen (registred trademark)
-  if (union_bb.size() > 1)
-    throw std::logic_error("trimming of the robot's bounding box failed");
+  bg_box_type union_bb;
+  bg::intersection(robot_bb, map_bb, union_bb);
 
   // now we can convert the union_box to map coordinates
+  return 0;
 }
 
 }  // namespace laces

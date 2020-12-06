@@ -16,6 +16,15 @@ struct derivatives {
   cell_type center;  ///< center of rotation
 };
 
+/// @brief POD holding all the data required for operation
+struct data {
+  cv::Mat edt;
+  derivatives d;
+};
+
+/// @brief data type defining the gradient on a certain point
+using cost_type = cv::Scalar_<float>;
+
 namespace internal {
 // code inside this namespace is not part of the public interface.
 // we put it here so we can actually unit-test it.
@@ -105,15 +114,13 @@ init_derivatives(cv::InputArray _image, const cell_type& _center);
 }  // namespace internal
 
 /**
- * @brief Highest api level for the user to the get the derivatives
- *
+ * @brief
+ * 
  * @param _cells
- * @return derivatives
+ * @return data
  */
-derivatives
-init_derivatives(const cell_vector_type& _cells);
-
-using cost_type = cv::Scalar_<float>;
+data
+init_data(const cell_vector_type& _cells);
 
 /**
  * @brief Get the derivative object

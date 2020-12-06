@@ -352,16 +352,17 @@ init_derivatives(cv::InputArray _image, const cell_type& _center) {
 
 }  // namespace internal
 
-derivatives
-init_derivatives(const cell_vector_type& _cells) {
+data
+init_data(const cell_vector_type& _cells) {
   using namespace internal;
   const cell_type padding(2, 2);
   cell_type center;
   const auto im1 = draw_polygon(_cells, center, padding);
   const auto im2 = euclidean_distance_transform(im1);
-  const auto im3 = smoothen_edges(im2, shift_cells(_cells, center));
-  // todo fix im2 for im3
-  return internal::init_derivatives(im2, center);
+  data out;
+  out.edt = smoothen_edges(im2, shift_cells(_cells, center));
+  out.d = init_derivatives(out.edt, center);
+  return out;
 }
 
 /**

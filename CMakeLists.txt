@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.0.2)
 project(laces)
 
-set(CATKIN_PACKAGES costmap_2d)
+set(CATKIN_PACKAGES costmap_2d geometry_msgs tf2 tf2_geometry_msgs)
 find_package(catkin REQUIRED COMPONENTS ${CATKIN_PACKAGES})
 find_package(Boost REQUIRED)
 find_package(OpenCV REQUIRED)

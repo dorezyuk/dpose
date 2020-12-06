@@ -121,6 +121,8 @@ to_bg_matrix(const pose_msg& _msg) noexcept {
 
 using cv_box_type = cv::Rect2i;
 
+/// @brief convert a boost::geometry point to cell_type using the costmap
+/// @throw std::runtime_error if the _point is outside of the _cm
 cell_type
 to_cv_cell(const bg_point_type& _point, const costmap_2d::Costmap2D& _cm) {
   unsigned int x, y;
@@ -129,6 +131,8 @@ to_cv_cell(const bg_point_type& _point, const costmap_2d::Costmap2D& _cm) {
   return {static_cast<int>(x), static_cast<int>(y)};
 }
 
+/// @brief convert a boost::geometry box to cv_box_type using the costmap
+/// @throw std::runtime_error if the _bg is not fully inside the _cm
 inline cv_box_type
 to_cv_box(const bg_box_type& _bg, const costmap_2d::Costmap2D& _cm) {
   return {to_cv_cell(_bg.min_corner(), _cm), to_cv_cell(_bg.max_corner(), _cm)};

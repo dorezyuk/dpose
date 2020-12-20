@@ -403,11 +403,12 @@ get_cost(const cv::Mat& _data, const cell_type& _cell) {
 }
 
 float
-get_cost(const cv::Mat& _data, const cell_vector_type& _cells) {
+get_cost(const data& _data, const cell_vector_type& _cells) {
   // accumulate the cost over the entire cell vector
+  const auto edt = _data.edt;
   return std::accumulate(_cells.begin(), _cells.end(), 0.f,
                          [&](float _sum, const cell_type& _cell) {
-                           return _sum + get_cost(_data, _cell);
+                           return _sum + get_cost(edt, _cell);
                          });
 }
 

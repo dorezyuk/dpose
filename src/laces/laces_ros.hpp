@@ -38,6 +38,12 @@ using bg_box_type = bg::model::box<bg_point_type>;
 bg_box_type
 to_bg_box(const polygon_msg& _msg);
 
+/// @brief returns the bounding box from the data
+/// @throw std::runtime_error if the generation of the bg_box_type fails
+bg_box_type
+to_bg_box(const data &_data, double _resolution);
+
+
 }  // namespace internal
 
 struct laces_ros {

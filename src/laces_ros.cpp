@@ -119,6 +119,12 @@ to_bg_matrix(const pose_msg& _msg) noexcept {
                       tf2::getYaw(_msg.orientation));
 }
 
+inline bg_matrix_type
+to_bg_matrix(const cell_type& _cell, double _resolution) {
+  bg_point_type p(_cell.x * _resolution, _cell.y * _resolution);
+  return {bg_translate_type{p.x(), p.y()}};
+}
+
 using cv_box_type = cv::Rect2i;
 
 /// @brief convert a boost::geometry point to cell_type using the costmap
@@ -181,12 +187,14 @@ laces_ros::get_cost(const pose_msg& _msg) {
     return 0;
 
   // get the transform from the _msg
-  const auto trans = to_bg_matrix(_msg);
+  const auto m_to_b = to_bg_matrix(_msg);
+  const auto b_to_k = to_bg_matrix(-data_.d.center, cm_->getResolution());
+  const auto m_to_k = bg_matrix_type{m_to_b.matrix() * b_to_k.matrix()};
 
   // convert the box to a polygon
   const auto original_polygon = to_bg_polygon(bb_);
   bg_polygon_type transformed_polygon;
-  if (!bg::transform(original_polygon, transformed_polygon, trans))
+  if (!bg::transform(original_polygon, transformed_polygon, m_to_b))
     throw std::runtime_error("failed to transform the polygon");
 
   // now get the bounding box from the transformed polygon
@@ -203,7 +211,36 @@ laces_ros::get_cost(const pose_msg& _msg) {
   bg::intersection(robot_bb, map_bb, union_bb);
 
   // now we can convert the union_box to map coordinates
-  return 0;
+  transformed_polygon = to_bg_polygon(union_bb);
+  std::vector<costmap_2d::MapLocation> cells(
+      transformed_polygon.outer().size());
+  std::transform(transformed_polygon.outer().begin(),
+                 transformed_polygon.outer().end(), cells.begin(),
+                 [&](const bg_point_type& __point) {
+                   costmap_2d::MapLocation ml;
+                   cm_->worldToMap(__point.x(), __point.y(), ml.x, ml.y);
+                   return ml;
+                 });
+
+  // iterate over the cells
+  // todo this is bullshit
+  float cost = 0;
+  for (int y = cells.front().y; y != cells[1].y; ++y) {
+    int end_index = cm_->getIndex(cells[1].x, y);
+    for (int  x = cells[1].x, ii = cm_->getIndex(x, y); ii != end_index; ++ii, ++x) {
+      // skip the non-lethal part
+      if(cm_->getCharMap()[ii] != costmap_2d::LETHAL_OBSTACLE)
+        continue;
+
+      // now convert the map domain into the kernel domain
+      bg_point_type k_cell(x, y);
+      // this is way too ugly
+      bg::transform(k_cell, k_cell, m_to_k);
+      cost += get_cost(data_, k_cell);
+    }
+  }
+
+  return cost;
 }
 
 }  // namespace laces

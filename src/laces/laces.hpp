@@ -140,6 +140,9 @@ get_derivative(const derivatives& _data, const cell_vector_type& _cells);
  * @return float
  */
 float
-get_cost(const cv::Mat& _data, const cell_vector_type& _cells);
+get_cost(const data& _data, const cell_vector_type& _cells);
+
+float
+get_cost(const data& _data, const cell_type& _cell);
 
 }  // namespace laces

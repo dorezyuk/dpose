@@ -33,8 +33,7 @@ draw_polygon(const cell_vector_type& _cells, cell_type& _shift,
   cv::Rect2i bbi(static_cast<cell_type>(bb.tl()) - _padding,
                  static_cast<cell_type>(bb.br()) + _padding);
   // setup the image
-  cv::Scalar s(0);
-  cv::Mat image(bbi.size(), cv::DataType<uint8_t>::type, s);
+  cv::Mat image(bbi.size(), cv::DataType<uint8_t>::type, cv::Scalar(0));
 
   // it may be that the _cells contain negative numbers - we cannot draw them
   // so we have to shift everything by the lower left corner of the bounding box

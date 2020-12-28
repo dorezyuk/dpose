@@ -1,0 +1,7 @@
+<class_libraries>
+  <library path="liblaces_ros">
+    <class type="laces::LacesLayer"  base_class_type="costmap_2d::Layer">
+      <description>Test class for laces.</description>
+    </class>
+  </library>
+</class_libraries>

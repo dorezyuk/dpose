@@ -236,7 +236,7 @@ laces_ros::get_cost(const pose_msg& _msg) {
       bg_point_type k_cell(x, y);
       // this is way too ugly
       bg::transform(k_cell, k_cell, m_to_k);
-      cost += get_cost(data_, k_cell);
+      // cost += get_cost(data_, k_cell);
     }
   }
 

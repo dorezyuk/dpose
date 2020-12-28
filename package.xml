@@ -13,8 +13,13 @@
   <depend>geometry_msgs</depend>
   <depend>tf2</depend>
   <depend>tf2_geometry_msgs</depend>
+  <depend>gpp_interface</depend>
 
   <!-- non-ros-related libs -->
   <depend>boost</depend>
   <depend>libopencv-dev</depend>
+
+  <export>
+    <costmap_2d plugin="${prefix}/plugin.xml"/>
+  </export>
 </package>

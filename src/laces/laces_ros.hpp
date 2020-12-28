@@ -2,7 +2,9 @@
 
 #include <laces/laces.hpp>
 
+#include <gpp_interface/pre_planning_interface.hpp>
 #include <costmap_2d/costmap_2d.h>
+#include <costmap_2d/layer.h>
 #include <costmap_2d/layered_costmap.h>
 #include <geometry_msgs/Point.h>
 #include <geometry_msgs/PoseStamped.h>
@@ -41,8 +43,7 @@ to_bg_box(const polygon_msg& _msg);
 /// @brief returns the bounding box from the data
 /// @throw std::runtime_error if the generation of the bg_box_type fails
 bg_box_type
-to_bg_box(const data &_data, double _resolution);
-
+to_bg_box(const data& _data, double _resolution);
 
 }  // namespace internal
 
@@ -61,6 +62,36 @@ private:
   data data_;
   internal::bg_box_type bb_;
   const costmap_2d::Costmap2D* cm_ = nullptr;
+};
+
+// struct GppLaces : public gpp_interface::PrePlanningInterface {
+//   virtual bool
+//   preProcess(Pose& _start, Pose& _goal, Map& _map, double _tolerance)
+//   override;
+
+//   virtual void
+//   initialize(const std::string& _name) override;
+//   ;
+// };
+
+struct LacesLayer : public costmap_2d::Layer {
+  void
+  updateBounds(double robot_x, double robot_y, double robot_yaw, double*,
+               double*, double*, double*) override {
+    // we just set the pose
+    robot_x_ = robot_x;
+    robot_y_ = robot_y;
+    robot_yaw_ = robot_yaw;
+  }
+
+  void
+  updateCosts(costmap_2d::Costmap2D& map, int, int, int, int) override;
+
+protected:
+  virtual void
+  onInitialize() override;
+
+  double robot_x_, robot_y_, robot_yaw_;
 };
 
 }  // namespace laces

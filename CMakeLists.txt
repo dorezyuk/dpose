@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.0.2)
 project(laces)
 
-set(CATKIN_PACKAGES costmap_2d geometry_msgs tf2 tf2_geometry_msgs)
+set(CATKIN_PACKAGES costmap_2d geometry_msgs tf2 tf2_geometry_msgs gpp_interface)
 find_package(catkin REQUIRED COMPONENTS ${CATKIN_PACKAGES})
 find_package(Boost REQUIRED)
 find_package(OpenCV REQUIRED)
@@ -44,6 +44,8 @@ install(TARGETS ${PROJECT_NAME} ${PROJECT_NAME}_ros
 install(DIRECTORY src/${PROJECT_NAME}/
   DESTINATION ${CATKIN_PACKAGE_INCLUDE_DESTINATION}
 )
+
+install(FILES plugin.xml DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION})
 
 #############
 ## Testing ##

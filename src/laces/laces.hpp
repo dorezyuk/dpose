@@ -50,18 +50,6 @@ draw_polygon(const cell_vector_type& _cells, cell_type& _shift,
              const cell_type& _padding = cell_type(0, 0));
 
 /**
- * @brief Returns a edt from the input image.
- *
- * The function will only apply the edt to pixels with the value 255.
- * Use draw_polygon to generate a valid input.
- *
- * @param _image input image
- * @return cv::Mat edt generated from _image
- */
-cv::Mat
-euclidean_distance_transform(cv::InputArray _image);
-
-/**
  * @brief Post-processing function.
  *
  * We will add a small gaussian blur at the edges of the polygon, so the

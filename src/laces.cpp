@@ -55,84 +55,6 @@ is_valid(const cell_type& _cell, const cv::Mat& _image) noexcept {
          _cell.y < _image.rows;
 }
 
-/// @brief helper which stores the current location and the origin
-struct voronoi_cell {
-  cell_type self;
-  cell_type origin;
-};
-
-cv::Mat
-euclidean_distance_transform(cv::InputArray _image) {
-  cv::Mat seen;
-  cv::Mat edt(_image.size(), cv::DataType<float>::type,
-              cv::Scalar(std::numeric_limits<float>::max()));
-  // note: implementation is not very fast, but thats also not where the speed
-  // is at for this library.
-
-  // init the occupied cells
-  cell_vector_type seen_cells;
-  cv::threshold(_image, seen, 254, 255, cv::THRESH_BINARY);
-  cv::findNonZero(seen, seen_cells);
-
-  // init the edt image
-  edt.setTo(0, seen);
-
-  // reset seen
-  seen.setTo(0);
-
-  // setup the neighbors on a eight-connected grid
-  const std::array<cell_type, 8> neighbors = {
-      cell_type{-1, 0}, cell_type{1, 0},  cell_type{0, -1}, cell_type{0, 1},
-      cell_type{1, 1},  cell_type{-1, 1}, cell_type{1, -1}, cell_type{-1, -1}};
-
-  // todo make sure that this is a shallow copy
-  const auto mat = _image.getMat();
-
-  // init the curr(ent) wave
-  std::vector<voronoi_cell> curr(seen_cells.size()), next;
-  std::transform(seen_cells.begin(), seen_cells.end(), curr.begin(),
-                 [](const cell_type& __cell) {
-                   return voronoi_cell{__cell, __cell};
-                 });
-
-  // do a voronoi-style expansion
-  while (!curr.empty()) {
-    // iterate over all cells within the current wave
-    for (const auto& cell : curr) {
-      // skip if this cells is a duplicate
-      if (seen.at<uint8_t>(cell.self) &&
-          edt.at<float>(cell.self) < cv::norm(cell.self - cell.origin))
-        continue;
-
-      // mark this cells as seen
-      seen.at<uint8_t>(cell.self) = 1;
-
-      // iterate over all neighbors
-      for (const auto& offset : neighbors) {
-        const auto candidate = cell.self + offset;
-
-        // skip of of bound-candidates
-        if (!is_valid(candidate, mat))
-          continue;
-
-        const auto dist =
-            static_cast<float>(cv::norm(cell.self + offset - cell.origin));
-        // skip cells if we dont improve
-        if (edt.at<float>(candidate) <= dist)
-          continue;
-
-        // mark the current cell
-        edt.at<float>(candidate) = dist;
-        next.emplace_back(voronoi_cell{candidate, cell.origin});
-      }
-    }
-    // move will invalidate next...
-    curr = std::move(next);
-  }
-
-  return edt;
-}
-
 /**
  * @brief Helper to shift all cells by _shift
  *
@@ -357,10 +279,19 @@ init_data(const cell_vector_type& _cells) {
   using namespace internal;
   const cell_type padding(2, 2);
   cell_type center;
-  const auto im1 = draw_polygon(_cells, center, padding);
-  const auto im2 = euclidean_distance_transform(im1);
+
+  cv::Mat im1 = draw_polygon(_cells, center, padding);
+  // we need to inverse the im1: cv::distanceTransform calculates the distance
+  // to zeros not to max.
+  cv::Mat inv(im1.rows, im1.cols, im1.type());
+  cv::bitwise_not(im1, inv);
+
+  // not get the edt
+  cv::Mat edt(im1.rows, im1.cols, cv::DataType<float>::type);
+  cv::distanceTransform(im1, edt, cv::DIST_L2, cv::DIST_MASK_PRECISE);
+
   data out;
-  out.edt = smoothen_edges(im2, shift_cells(_cells, center));
+  out.edt = smoothen_edges(edt, shift_cells(_cells, center));
   out.d = init_derivatives(out.edt, center);
   return out;
 }

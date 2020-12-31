@@ -1,5 +1,6 @@
 #include <laces/laces_ros.hpp>
 
+#include <pluginlib/class_list_macros.h>
 #include <tf2/utils.h>
 
 #include <boost/geometry/strategies/transform.hpp>
@@ -178,7 +179,9 @@ laces_ros::laces_ros(costmap_2d::LayeredCostmap& _lcm) :
 
 laces_ros::laces_ros(const costmap_2d::Costmap2D& _cm,
                      const polygon_msg& _footprint) :
-    data_(init_data(_cm, _footprint)), bb_(to_bg_box(_footprint)), cm_(&_cm) {}
+    data_(init_data(_cm, _footprint)),
+    bb_(to_bg_polygon(to_bg_box(_footprint))),
+    cm_(&_cm) {}
 
 float
 laces_ros::get_cost(const pose_msg& _msg) {
@@ -187,60 +190,51 @@ laces_ros::get_cost(const pose_msg& _msg) {
     return 0;
 
   // get the transform from the _msg
+  // indedices are map (m), baselink (b) and kernel (k).
   const auto m_to_b = to_bg_matrix(_msg);
   const auto b_to_k = to_bg_matrix(-data_.d.center, cm_->getResolution());
   const auto m_to_k = bg_matrix_type{m_to_b.matrix() * b_to_k.matrix()};
 
-  // convert the box to a polygon
-  const auto original_polygon = to_bg_polygon(bb_);
-  bg_polygon_type transformed_polygon;
-  if (!bg::transform(original_polygon, transformed_polygon, m_to_b))
+  // convert the kernel into the map frame
+  bg_polygon_type kernel_bb;
+  if (!bg::transform(bb_, kernel_bb, m_to_b))
     throw std::runtime_error("failed to transform the polygon");
-
-  // now get the bounding box from the transformed polygon
-  // this may throw a std::runtime_error
-  const auto robot_bb = to_bg_box(transformed_polygon);
 
   // remove the part of the robot_bb outside of the map
   const auto map_bb = to_bg_box(*cm_);
 
   // the entire robot is outside of the map
-  if (!bg::intersects(robot_bb, map_bb))
+  if (!bg::intersects(kernel_bb, map_bb))
     return 0;
-  bg_box_type union_bb;
-  bg::intersection(robot_bb, map_bb, union_bb);
+  bg_polygon_type union_bb;
+  bg::intersection(kernel_bb, map_bb, union_bb);
 
   // now we can convert the union_box to map coordinates
-  transformed_polygon = to_bg_polygon(union_bb);
-  std::vector<costmap_2d::MapLocation> cells(
-      transformed_polygon.outer().size());
-  std::transform(transformed_polygon.outer().begin(),
-                 transformed_polygon.outer().end(), cells.begin(),
+  const auto& ring = union_bb.outer();
+  std::vector<costmap_2d::MapLocation> cells(ring.size());
+  std::transform(ring.begin(), ring.end(), cells.begin(),
                  [&](const bg_point_type& __point) {
                    costmap_2d::MapLocation ml;
                    cm_->worldToMap(__point.x(), __point.y(), ml.x, ml.y);
                    return ml;
                  });
 
-  // iterate over the cells
-  // todo this is bullshit
-  float cost = 0;
-  for (int y = cells.front().y; y != cells[1].y; ++y) {
-    int end_index = cm_->getIndex(cells[1].x, y);
-    for (int  x = cells[1].x, ii = cm_->getIndex(x, y); ii != end_index; ++ii, ++x) {
-      // skip the non-lethal part
-      if(cm_->getCharMap()[ii] != costmap_2d::LETHAL_OBSTACLE)
-        continue;
 
-      // now convert the map domain into the kernel domain
-      bg_point_type k_cell(x, y);
-      // this is way too ugly
-      bg::transform(k_cell, k_cell, m_to_k);
-      // cost += get_cost(data_, k_cell);
-    }
-  }
+  return 0;
+}
 
-  return cost;
+void
+LacesLayer::updateCosts(costmap_2d::Costmap2D& _map, int, int, int, int) {
+  ROS_INFO("[laces]: staring");
+}
+
+void
+LacesLayer::onFootprintChanged() {
+  ROS_INFO("[laces]: updating footprint");
+  data_ = init_data(*layered_costmap_->getCostmap(),
+                    layered_costmap_->getFootprint());
 }
 
 }  // namespace laces
+
+PLUGINLIB_EXPORT_CLASS(laces::LacesLayer, costmap_2d::Layer)

@@ -60,19 +60,9 @@ struct laces_ros {
 
 private:
   data data_;
-  internal::bg_box_type bb_;
+  internal::bg_polygon_type bb_;
   const costmap_2d::Costmap2D* cm_ = nullptr;
 };
-
-// struct GppLaces : public gpp_interface::PrePlanningInterface {
-//   virtual bool
-//   preProcess(Pose& _start, Pose& _goal, Map& _map, double _tolerance)
-//   override;
-
-//   virtual void
-//   initialize(const std::string& _name) override;
-//   ;
-// };
 
 struct LacesLayer : public costmap_2d::Layer {
   void
@@ -87,11 +77,12 @@ struct LacesLayer : public costmap_2d::Layer {
   void
   updateCosts(costmap_2d::Costmap2D& map, int, int, int, int) override;
 
-protected:
-  virtual void
-  onInitialize() override;
+  void
+  onFootprintChanged() override;
 
+private:
   double robot_x_, robot_y_, robot_yaw_;
+  data data_;
 };
 
 }  // namespace laces

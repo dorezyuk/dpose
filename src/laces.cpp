@@ -287,10 +287,10 @@ init_data(const cell_vector_type& _cells) {
 
   // not get the edt
   cv::Mat edt(im1.rows, im1.cols, cv::DataType<float>::type);
-  cv::distanceTransform(im1, edt, cv::DIST_L2, cv::DIST_MASK_PRECISE);
+  cv::distanceTransform(inv, edt, cv::DIST_L2, cv::DIST_MASK_PRECISE);
 
   data out;
-  out.edt = smoothen_edges(edt, shift_cells(_cells, center));
+  out.edt = smoothen_edges(edt, shift_cells(_cells, -center));
   out.d = init_derivatives(out.edt, center);
   return out;
 }

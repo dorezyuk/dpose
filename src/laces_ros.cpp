@@ -3,6 +3,7 @@
 #include <pluginlib/class_list_macros.h>
 #include <tf2/utils.h>
 
+#include <boost/geometry/algorithms/convert.hpp>
 #include <boost/geometry/strategies/transform.hpp>
 #include <boost/geometry/strategies/transform/matrix_transformers.hpp>
 
@@ -15,6 +16,20 @@ namespace laces {
 namespace internal {
 
 namespace {
+
+inline void
+convert(const cv::Mat& _mat, bg_box_type& _box) {
+  _box.min_corner() = bg_point_type{0, 0};
+  _box.max_corner().x(_mat.rows);
+  _box.max_corner().y(_mat.cols);
+}
+
+inline void
+convert(const costmap_2d::Costmap2D& _map, bg_box_type& _box) {
+  _box.min_corner() = bg_point_type{0, 0};
+  _box.max_corner().x(_map.getSizeInCellsX());
+  _box.max_corner().y(_map.getSizeInCellsY());
+}
 
 // only cpp-defined helpers
 
@@ -33,35 +48,6 @@ to_bg_ring(const polygon_msg& _msg) noexcept {
   return ring;
 }
 
-/// @brief convers a ros-polygon to a boost::geometry polygon
-bg_polygon_type
-to_bg_polygon(const polygon_msg& _msg) noexcept {
-  bg_polygon_type polygon;
-  polygon.outer() = to_bg_ring(_msg);
-
-  // try to fix the geometry
-  if (!bg::is_valid(polygon))
-    bg::correct(polygon);
-
-  return polygon;
-}
-
-/// @brief generates a polygon from the corners of a bounding box
-bg_polygon_type
-to_bg_polygon(const bg_box_type& _box) noexcept {
-  // assemble the polygon
-  bg_polygon_type polygon;
-  // create the missing points
-  const bg_point_type ul{_box.min_corner().x(), _box.max_corner().y()};
-  const bg_point_type lr{_box.max_corner().x(), _box.min_corner().y()};
-  // create the outer ring in CCW
-  const bg_polygon_type::ring_type ring = {
-      _box.min_corner(), ul, _box.max_corner(), lr, _box.min_corner()};
-
-  polygon.outer() = ring;
-  return polygon;
-}
-
 /// @brief generates a bounding box from a boost::geometry polygon
 /// @throw std::runtime_error if the input is not valid
 bg_box_type
@@ -78,11 +64,6 @@ to_bg_box(const bg_polygon_type& _polygon) {
 
 }  // namespace
 
-bg_box_type
-to_bg_box(const polygon_msg& _msg) {
-  const auto polygon = to_bg_polygon(_msg);
-  return to_bg_box(polygon);
-}
 
 namespace {
 
@@ -118,12 +99,6 @@ inline bg_matrix_type
 to_bg_matrix(const pose_msg& _msg) noexcept {
   return to_bg_matrix(_msg.position.x, _msg.position.y,
                       tf2::getYaw(_msg.orientation));
-}
-
-inline bg_matrix_type
-to_bg_matrix(const cell_type& _cell, double _resolution) {
-  bg_point_type p(_cell.x * _resolution, _cell.y * _resolution);
-  return {bg_translate_type{p.x(), p.y()}};
 }
 
 using cv_box_type = cv::Rect2i;
@@ -169,6 +144,31 @@ to_cells(const polygon_msg& _footprint, double _resolution) {
   return cells;
 }
 
+using cm_polygon = std::vector<costmap_2d::MapLocation>;
+using cm_map = costmap_2d::Costmap2D;
+
+/**
+ * @brief interval defined by [min, max].
+ *
+ * Use interval::extend in order to add values.
+ */
+template <typename _T>
+struct interval {
+  interval() :
+      min{std::numeric_limits<_T>::max()},
+      max{std::numeric_limits<_T>::lowest()} {}
+
+  inline void
+  extend(const _T& _v) noexcept {
+    min = std::min(min, _v);
+    max = std::max(max, _v);
+  }
+
+  _T min, max;
+};
+
+using cell_interval = interval<size_t>;
+
 inline data
 init_data(const costmap_2d::Costmap2D& _cm, const polygon_msg& _footprint) {
   return init_data(to_cells(_footprint, _cm.getResolution()));
@@ -177,10 +177,10 @@ init_data(const costmap_2d::Costmap2D& _cm, const polygon_msg& _footprint) {
 laces_ros::laces_ros(costmap_2d::LayeredCostmap& _lcm) :
     laces_ros(*_lcm.getCostmap(), _lcm.getFootprint()) {}
 
-laces_ros::laces_ros(const costmap_2d::Costmap2D& _cm,
+laces_ros::laces_ros(costmap_2d::Costmap2D& _cm,
                      const polygon_msg& _footprint) :
     data_(init_data(_cm, _footprint)),
-    bb_(to_bg_polygon(to_bg_box(_footprint))),
+    // bb_(to_bg_polygon(to_bg_box(_footprint))),
     cm_(&_cm) {}
 
 float
@@ -189,36 +189,93 @@ laces_ros::get_cost(const pose_msg& _msg) {
   if (!cm_)
     return 0;
 
-  // get the transform from the _msg
+  // note: all computations are done in the cell space.
   // indedices are map (m), baselink (b) and kernel (k).
-  const auto m_to_b = to_bg_matrix(_msg);
-  const auto b_to_k = to_bg_matrix(-data_.d.center, cm_->getResolution());
+
+  const auto res = cm_->getResolution();
+  if (res <= 0)
+    throw std::runtime_error("resolution must be positive");
+
+  // convert meters to cell-space
+  auto msg = _msg;
+  msg.position.x /= res;
+  msg.position.y /= res;
+  msg.position.z /= res;
+
+  // get the transform from map (m) to kernel (k)
+  const auto m_to_b = to_bg_matrix(msg);
+  const auto b_to_k = to_bg_matrix(-data_.d.center.x, -data_.d.center.y, 0);
   const auto m_to_k = bg_matrix_type{m_to_b.matrix() * b_to_k.matrix()};
 
   // convert the kernel into the map frame
-  bg_polygon_type kernel_bb;
-  if (!bg::transform(bb_, kernel_bb, m_to_b))
+  bg_polygon_type k_kernel_bb, m_kernel_bb, m_map_bb;
+  bg_box_type _kernel_bb, _map_bb;
+
+  // convert first everything to boxes
+  convert(*cm_, _map_bb);
+  convert(data_.edt, _kernel_bb);
+
+  // now convert the box types to polygons
+  bg::convert(_map_bb, m_map_bb);
+  bg::convert(_kernel_bb, k_kernel_bb);
+
+  // transform k_kernel_bb to map frame
+  const auto k_to_m = bg_matrix_type{boost::qvm::inverse(m_to_k.matrix())};
+  if (!bg::transform(k_kernel_bb, m_kernel_bb, k_to_m))
     throw std::runtime_error("failed to transform the polygon");
 
-  // remove the part of the robot_bb outside of the map
-  const auto map_bb = to_bg_box(*cm_);
-
   // the entire robot is outside of the map
-  if (!bg::intersects(kernel_bb, map_bb))
+  std::vector<bg_polygon_type> intersection_bb;
+  bg::intersection(m_kernel_bb, m_map_bb, intersection_bb);
+
+  if (intersection_bb.empty())
     return 0;
-  bg_polygon_type union_bb;
-  bg::intersection(kernel_bb, map_bb, union_bb);
 
   // now we can convert the union_box to map coordinates
-  const auto& ring = union_bb.outer();
-  std::vector<costmap_2d::MapLocation> cells(ring.size());
-  std::transform(ring.begin(), ring.end(), cells.begin(),
-                 [&](const bg_point_type& __point) {
-                   costmap_2d::MapLocation ml;
-                   cm_->worldToMap(__point.x(), __point.y(), ml.x, ml.y);
-                   return ml;
+  const auto& ring = intersection_bb.front().outer();
+  cm_polygon sparse_outline(ring.size());
+  std::transform(ring.begin(), ring.end(), sparse_outline.begin(),
+                 [](const bg_point_type& __p) {
+                   return costmap_2d::MapLocation{std::round(__p.x()),
+                                                  std::round(__p.y())};
                  });
 
+  // get the cells of the dense outline
+  cm_polygon dense_outline;
+  cm_->polygonOutlineCells(sparse_outline, dense_outline);
+
+  // convert the cells into line-intervals
+  std::unordered_map<size_t, cell_interval> lines;
+
+  for (const auto& cell : dense_outline)
+    lines[cell.y].extend(cell.x);
+
+  // iterate over all lines
+  bg_point_type k_point;
+  for (const auto& line : lines) {
+    // the interval's max is inclusive, so we increment it
+    const auto end = cm_->getIndex(line.first, line.second.max) + 1;
+    auto start = cm_->getIndex(line.first, line.second.min);
+
+    // iterate over all cells within one line-intervals
+    for (auto x = line.second.min; start != end; ++start, ++x) {
+      // we only want lethal cells
+      if (cm_->getCharMap()[start] != costmap_2d::LETHAL_OBSTACLE)
+        continue;
+
+      // convert to the kernel frame
+      if(!bg::transform(bg_point_type{x, line.first}, k_point, m_to_k))
+        continue;
+      
+      // now get the cost from k_point
+      k_point.x(std::round(k_point.x()));
+      k_point.y(std::round(k_point.y()));
+
+
+      // check if k_point is valid
+      // get the cost
+    }
+  }
 
   return 0;
 }

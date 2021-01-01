@@ -2,7 +2,7 @@
 
 #include <laces/laces.hpp>
 
-#include <gpp_interface/pre_planning_interface.hpp>
+// #include <gpp_interface/pre_planning_interface.hpp>
 #include <costmap_2d/costmap_2d.h>
 #include <costmap_2d/layer.h>
 #include <costmap_2d/layered_costmap.h>
@@ -22,8 +22,12 @@ namespace laces {
 // contrary to the conversion withing this lib, we will use the prefix _msg
 // to indicate that this data-types are ros-msgs
 
+namespace gm = geometry_msgs;
+namespace cm = costmap_2d;
+
 using pose_msg = geometry_msgs::Pose;
-using polygon_msg = std::vector<geometry_msgs::Point>;
+using point_msg = geometry_msgs::Point;
+using polygon_msg = std::vector<point_msg>;
 
 namespace internal {
 
@@ -49,7 +53,7 @@ to_bg_box(const data& _data, double _resolution);
 
 struct laces_ros {
   laces_ros() = default;
-  laces_ros(const costmap_2d::Costmap2D& _cm, const polygon_msg& _footprint);
+  laces_ros(costmap_2d::Costmap2D& _cm, const polygon_msg& _footprint);
   explicit laces_ros(costmap_2d::LayeredCostmap& _lcm);
 
   float
@@ -61,7 +65,7 @@ struct laces_ros {
 private:
   data data_;
   internal::bg_polygon_type bb_;
-  const costmap_2d::Costmap2D* cm_ = nullptr;
+  costmap_2d::Costmap2D* cm_ = nullptr;
 };
 
 struct LacesLayer : public costmap_2d::Layer {

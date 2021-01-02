@@ -42,7 +42,7 @@ to_box(const _T& _x, const _T& _y) noexcept {
   // order does not matter that much here
   // clang-format off
   box << 0, x, x, 0, 0,
-         0, y, 0, y, 0;
+         0, 0, y, y, 0;
   // clang-format on
   return box;
 }
@@ -65,11 +65,8 @@ struct laces_ros {
   laces_ros(costmap_2d::Costmap2D& _cm, const polygon_msg& _footprint);
   explicit laces_ros(costmap_2d::LayeredCostmap& _lcm);
 
-  float
+  std::pair<float, Eigen::Vector3d>
   get_cost(const pose_msg& _msg);
-
-  cost_type
-  get_derivative(const pose_msg& _msg);
 
 private:
   data data_;

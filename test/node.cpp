@@ -3,6 +3,7 @@
 #include <costmap_2d/footprint.h>
 #include <map_msgs/OccupancyGridUpdate.h>
 #include <nav_msgs/OccupancyGrid.h>
+#include <geometry_msgs/PoseStamped.h>
 #include <nav_msgs/Odometry.h>
 #include <ros/ros.h>
 
@@ -23,6 +24,17 @@ convert(unsigned char value) {
   }
 }
 
+gm::PoseStamped
+to_pose(const Eigen::Vector3d _pose, const std::string& _frame) {
+  gm::PoseStamped  msg;
+  msg.header.frame_id = _frame;
+  const auto yaw = std::atan2(_pose.y(), _pose.x());
+  tf2::Quaternion q;
+  q.setRPY(0, 0, yaw);
+  msg.pose.orientation = tf2::toMsg(q);
+  return msg;
+}
+
 struct map_sub {
   map_sub() {
     ros::NodeHandle nh("/navigation/move_base_flex");
@@ -35,6 +47,7 @@ struct map_sub {
         &map_sub::map_update_callback, this);
     odom_sub_ = nh.subscribe("/base_pose_ground_truth", 1,
                              &map_sub::odom_callback, this);
+    d_pub_ = nh.advertise<gm::PoseStamped>("derivative", 1);                             
   }
 
   void
@@ -92,11 +105,16 @@ struct map_sub {
       return;
     }
 
-    ROS_INFO_STREAM("Cost is " << impl_.get_cost(_msg.pose.pose));
+    const auto res = impl_.get_cost(_msg.pose.pose);
+    ROS_INFO_STREAM("Cost is " << res.first);
+    if(res.first) {
+      d_pub_.publish(to_pose(res.second, "base_link"));
+    }
   }
 
 private:
   ros::Subscriber map_sub_, map_update_sub_, odom_sub_;
+  ros::Publisher d_pub_;
   costmap_2d::Costmap2D map_;
   std::vector<geometry_msgs::Point> fp_;
 

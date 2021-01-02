@@ -60,11 +60,9 @@ laces_ros::laces_ros(costmap_2d::LayeredCostmap& _lcm) :
 
 laces_ros::laces_ros(costmap_2d::Costmap2D& _cm,
                      const polygon_msg& _footprint) :
-    data_(init_data(_cm, _footprint)),
-    // bb_(to_bg_polygon(to_bg_box(_footprint))),
-    cm_(&_cm) {}
+    data_(init_data(_cm, _footprint)), cm_(&_cm) {}
 
-float
+std::pair<float, Eigen::Vector3d>
 laces_ros::get_cost(const pose_msg& _msg) {
   if (!cm_)
     throw std::runtime_error("no costmap provided");
@@ -90,13 +88,11 @@ laces_ros::get_cost(const pose_msg& _msg) {
   const transform_type m_to_b =
       to_eigen(m_origin.x(), m_origin.y(), tf2::getYaw(_msg.orientation));
   // todo check if minus is correct
-  const transform_type b_to_k =
-      to_eigen(data_.d.center.x, data_.d.center.y, 0);
+  const transform_type b_to_k = to_eigen(data_.d.center.x, data_.d.center.y, 0);
   const transform_type m_to_k = m_to_b * b_to_k;
 
   const box_type k_kernel_bb = to_box(data_.edt);
   const box_type m_kernel_bb = m_to_k * k_kernel_bb;
-  std::cout << m_kernel_bb << std::endl;
 
   // dirty rounding: we have to remove negative values, so we can cast to
   // unsigned int below
@@ -129,6 +125,7 @@ laces_ros::get_cost(const pose_msg& _msg) {
     lines[cell.y].extend(cell.x);
 
   float sum = 0;
+  Eigen::Vector3d derivative = Eigen::Vector3d::Zero();
   const transform_type k_to_m = m_to_k.inverse();
   // todo if the kernel and the map don't overlap, we will have an error
   // iterate over all lines
@@ -155,10 +152,13 @@ laces_ros::get_cost(const pose_msg& _msg) {
         continue;
 
       sum += data_.edt.at<float>(k_cell(1), k_cell(0));
+      derivative(0) += data_.d.dx.at<float>(k_cell(1), k_cell(0));
+      derivative(1) += data_.d.dy.at<float>(k_cell(1), k_cell(0));
+      derivative(2) += data_.d.dtheta.at<float>(k_cell(1), k_cell(0));
     }
   }
 
-  return sum;
+  return {sum, derivative};
 }
 
 void

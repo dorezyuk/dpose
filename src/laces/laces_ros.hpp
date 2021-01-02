@@ -33,12 +33,6 @@ to_eigen(double _x, double _y, double _yaw) noexcept {
   return Eigen::Translation2d(_x, _y) * Eigen::Rotation2Dd(_yaw);
 }
 
-inline transform_type
-to_eigen(const pose_msg& _msg) noexcept {
-  return to_eigen(_msg.position.x, _msg.position.y,
-                  tf2::getYaw(_msg.orientation));
-}
-
 template <typename _T>
 box_type
 to_box(const _T& _x, const _T& _y) noexcept {
@@ -62,6 +56,9 @@ inline box_type
 to_box(const cv::Mat& _cm) noexcept {
   return to_box(_cm.cols, _cm.rows);
 }
+
+cell_vector_type
+to_cells(const polygon_msg& _footprint, double _resolution);
 
 struct laces_ros {
   laces_ros() = default;

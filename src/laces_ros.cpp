@@ -66,9 +66,13 @@ laces_ros::laces_ros(costmap_2d::Costmap2D& _cm,
 
 float
 laces_ros::get_cost(const pose_msg& _msg) {
-  // todo maybe throw maybe warn...
   if (!cm_)
-    return 0;
+    throw std::runtime_error("no costmap provided");
+
+  // check if the robot-pose is planar - otherwise we cannot really deal with it
+  if (std::abs(_msg.orientation.x) > 1e-6 ||
+      std::abs(_msg.orientation.y) > 1e-6)
+    throw std::runtime_error("3-dimensional poses are not supported");
 
   // note: all computations are done in the cell space.
   // indedices are map (m), baselink (b) and kernel (k).
@@ -77,18 +81,18 @@ laces_ros::get_cost(const pose_msg& _msg) {
     throw std::runtime_error("resolution must be positive");
 
   // convert meters to cell-space
-  // todo origin is missing
-  auto msg = _msg;
-  msg.position.x /= res;
-  msg.position.y /= res;
-  msg.position.z /= res;
+  const eg::Vector2d b_origin(_msg.position.x, _msg.position.y);
+  const eg::Vector2d m_origin =
+      (b_origin - eg::Vector2d(cm_->getOriginX(), cm_->getOriginY())) *
+      (1. / res);
 
   // get the transform from map (m) to kernel (k)
-  const transform_type m_to_b = to_eigen(msg);
+  const transform_type m_to_b =
+      to_eigen(m_origin.x(), m_origin.y(), tf2::getYaw(_msg.orientation));
   // todo check if minus is correct
   const transform_type b_to_k =
       to_eigen(-data_.d.center.x, -data_.d.center.y, 0);
-  const auto m_to_k = m_to_b * b_to_k;
+  const transform_type m_to_k = m_to_b * b_to_k;
 
   const box_type k_kernel_bb = to_box(data_.edt);
   const box_type m_kernel_bb = m_to_k.inverse() * k_kernel_bb;
@@ -96,8 +100,9 @@ laces_ros::get_cost(const pose_msg& _msg) {
   // dirty rounding: we have to remove negative values, so we can cast to
   // unsigned int below
   box_type cell_kernel_bb = m_kernel_bb.array().round().matrix();
-  const std::array<double, 2> cm_size{static_cast<double>(cm_->getSizeInCellsX()),
-                                      static_cast<double>(cm_->getSizeInCellsY())};
+  const std::array<double, 2> cm_size{
+      static_cast<double>(cm_->getSizeInCellsX()),
+      static_cast<double>(cm_->getSizeInCellsY())};
   // iterate over the rows
   for (int rr = 0; rr != cell_kernel_bb.rows(); ++rr) {
     // clamp everything between zero and map size
@@ -123,30 +128,30 @@ laces_ros::get_cost(const pose_msg& _msg) {
     lines[cell.y].extend(cell.x);
 
   float sum = 0;
+  // todo if the kernel and the map don't overlap, we will have an error
   // iterate over all lines
   for (const auto& line : lines) {
     // the interval's max is inclusive, so we increment it
     const auto end = cm_->getIndex(line.first, line.second.max) + 1;
-    auto start = cm_->getIndex(line.first, line.second.min);
+    auto index = cm_->getIndex(line.first, line.second.min);
 
     // iterate over all cells within one line-intervals
-    for (auto x = line.second.min; start != end; ++start, ++x) {
+    for (auto x = line.second.min; index != end; ++index, ++x) {
       // we only want lethal cells
-      if (cm_->getCharMap()[start] != costmap_2d::LETHAL_OBSTACLE)
+      if (cm_->getCharMap()[index] != costmap_2d::LETHAL_OBSTACLE)
         continue;
 
       // convert to the kernel frame
-      const Eigen::Vector2d m_cell(x, line.first);
-      const Eigen::Vector2i k_cell =
+      const eg::Vector2d m_cell(x, line.first);
+      const eg::Vector2i k_cell =
           (m_to_k * m_cell).array().round().cast<int>().matrix();
 
       // check if k_cell is valid
       if ((k_cell.array() < 0).any() || k_cell(0) >= data_.edt.cols ||
           k_cell(1) >= data_.edt.rows)
         continue;
-      
-      sum += data_.edt.at<float>(k_cell(1), k_cell(0));
 
+      sum += data_.edt.at<float>(k_cell(1), k_cell(0));
     }
   }
 

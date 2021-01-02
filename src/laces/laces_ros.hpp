@@ -8,48 +8,60 @@
 #include <costmap_2d/layered_costmap.h>
 #include <geometry_msgs/Point.h>
 #include <geometry_msgs/PoseStamped.h>
+#include <tf2/utils.h>
+#include <tf2_geometry_msgs/tf2_geometry_msgs.h>
 
-#include <boost/geometry/geometries/box.hpp>
-#include <boost/geometry/geometries/point_xy.hpp>
-#include <boost/geometry/geometries/polygon.hpp>
-#include <boost/geometry/geometry.hpp>
+#include <Eigen/Dense>
 
 #include <vector>
 
 namespace laces {
 
-// below some io data types for ros-interface
-// contrary to the conversion withing this lib, we will use the prefix _msg
-// to indicate that this data-types are ros-msgs
-
 namespace gm = geometry_msgs;
 namespace cm = costmap_2d;
+namespace eg = Eigen;
 
-using pose_msg = geometry_msgs::Pose;
-using point_msg = geometry_msgs::Point;
-using polygon_msg = std::vector<point_msg>;
+using point_msg = gm::Point;
+using pose_msg = gm::Pose;
+using polygon_msg = std::vector<gm::Point>;
 
-namespace internal {
+using transform_type = Eigen::Isometry2d;
+using box_type = Eigen::Matrix<double, 2, 5>;
 
-// short-cut to the namespace
-namespace bg = boost::geometry;
+inline transform_type
+to_eigen(double _x, double _y, double _yaw) noexcept {
+  return Eigen::Translation2d(_x, _y) * Eigen::Rotation2Dd(_yaw);
+}
 
-// short-cuts to the used typess
-using bg_point_type = bg::model::d2::point_xy<double>;
-using bg_polygon_type = bg::model::polygon<bg_point_type>;
-using bg_box_type = bg::model::box<bg_point_type>;
+inline transform_type
+to_eigen(const pose_msg& _msg) noexcept {
+  return to_eigen(_msg.position.x, _msg.position.y,
+                  tf2::getYaw(_msg.orientation));
+}
 
-/// @brief returns the bounding box of the _msg
-/// @throw std::runtime_error if the generation of the bg_box_type fails
-bg_box_type
-to_bg_box(const polygon_msg& _msg);
+template <typename _T>
+box_type
+to_box(const _T& _x, const _T& _y) noexcept {
+  box_type box;
+  const auto x = static_cast<_T>(_x);
+  const auto y = static_cast<_T>(_y);
+  // order does not matter that much here
+  // clang-format off
+  box << 0, x, x, 0, 0,
+         0, y, 0, y, 0;
+  // clang-format on
+  return box;
+}
 
-/// @brief returns the bounding box from the data
-/// @throw std::runtime_error if the generation of the bg_box_type fails
-bg_box_type
-to_bg_box(const data& _data, double _resolution);
+inline box_type
+to_box(const costmap_2d::Costmap2D& _cm) noexcept {
+  return to_box(_cm.getSizeInCellsX(), _cm.getSizeInCellsY());
+}
 
-}  // namespace internal
+inline box_type
+to_box(const cv::Mat& _cm) noexcept {
+  return to_box(_cm.cols, _cm.rows);
+}
 
 struct laces_ros {
   laces_ros() = default;
@@ -64,7 +76,6 @@ struct laces_ros {
 
 private:
   data data_;
-  internal::bg_polygon_type bb_;
   costmap_2d::Costmap2D* cm_ = nullptr;
 };
 

@@ -3,7 +3,7 @@ project(laces)
 
 set(CATKIN_PACKAGES costmap_2d geometry_msgs tf2 tf2_geometry_msgs )
 find_package(catkin REQUIRED COMPONENTS ${CATKIN_PACKAGES})
-find_package(Boost REQUIRED)
+find_package(Eigen3 REQUIRED)
 find_package(OpenCV REQUIRED)
 
 catkin_package(
@@ -19,7 +19,7 @@ catkin_package(
 
 # the ros-independent part
 add_library(${PROJECT_NAME} src/laces.cpp)
-target_include_directories(${PROJECT_NAME} PUBLIC src ${Boost_INCLUDE_DIRS} ${OpenCV_INCLUDE_DIRS})
+target_include_directories(${PROJECT_NAME} PUBLIC src ${EIGEN3_INCLUDE_DIRS} ${OpenCV_INCLUDE_DIRS})
 target_link_libraries(${PROJECT_NAME} ${OpenCV_LIBS})
 
 # the ros-specific library

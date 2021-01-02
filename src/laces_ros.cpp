@@ -91,11 +91,12 @@ laces_ros::get_cost(const pose_msg& _msg) {
       to_eigen(m_origin.x(), m_origin.y(), tf2::getYaw(_msg.orientation));
   // todo check if minus is correct
   const transform_type b_to_k =
-      to_eigen(-data_.d.center.x, -data_.d.center.y, 0);
+      to_eigen(data_.d.center.x, data_.d.center.y, 0);
   const transform_type m_to_k = m_to_b * b_to_k;
 
   const box_type k_kernel_bb = to_box(data_.edt);
-  const box_type m_kernel_bb = m_to_k.inverse() * k_kernel_bb;
+  const box_type m_kernel_bb = m_to_k * k_kernel_bb;
+  std::cout << m_kernel_bb << std::endl;
 
   // dirty rounding: we have to remove negative values, so we can cast to
   // unsigned int below
@@ -107,7 +108,7 @@ laces_ros::get_cost(const pose_msg& _msg) {
   for (int rr = 0; rr != cell_kernel_bb.rows(); ++rr) {
     // clamp everything between zero and map size
     cell_kernel_bb.row(rr) =
-        cell_kernel_bb.row(rr).array().min(0).max(cm_size.at(rr)).matrix();
+        cell_kernel_bb.row(rr).array().max(0).min(cm_size.at(rr)).matrix();
   }
 
   // now we can convert the union_box to map coordinates
@@ -128,23 +129,25 @@ laces_ros::get_cost(const pose_msg& _msg) {
     lines[cell.y].extend(cell.x);
 
   float sum = 0;
+  const transform_type k_to_m = m_to_k.inverse();
   // todo if the kernel and the map don't overlap, we will have an error
   // iterate over all lines
+  const auto char_map = cm_->getCharMap();
   for (const auto& line : lines) {
     // the interval's max is inclusive, so we increment it
-    const auto end = cm_->getIndex(line.first, line.second.max) + 1;
-    auto index = cm_->getIndex(line.first, line.second.min);
+    const auto end = cm_->getIndex(line.second.max, line.first) + 1;
+    auto index = cm_->getIndex(line.second.min, line.first);
 
     // iterate over all cells within one line-intervals
     for (auto x = line.second.min; index != end; ++index, ++x) {
       // we only want lethal cells
-      if (cm_->getCharMap()[index] != costmap_2d::LETHAL_OBSTACLE)
+      if (char_map[index] != costmap_2d::LETHAL_OBSTACLE)
         continue;
 
       // convert to the kernel frame
       const eg::Vector2d m_cell(x, line.first);
       const eg::Vector2i k_cell =
-          (m_to_k * m_cell).array().round().cast<int>().matrix();
+          (k_to_m * m_cell).array().round().cast<int>().matrix();
 
       // check if k_cell is valid
       if ((k_cell.array() < 0).any() || k_cell(0) >= data_.edt.cols ||

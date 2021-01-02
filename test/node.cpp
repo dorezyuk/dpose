@@ -29,7 +29,7 @@ struct map_sub {
     fp_ = cm::makeFootprintFromParams(nh);
     ROS_INFO_STREAM("Footprint loaded with the size  " << fp_.size());
 
-    map_sub_ = nh.subscribe("/navigation/map", 1, &map_sub::map_callback, this);
+    map_sub_ = nh.subscribe("/navigation/move_base_flex/global_costmap/costmap", 1, &map_sub::map_callback, this);
     map_update_sub_ = nh.subscribe(
         "/navigation/move_base_flex/global_costmap/costmap_updates", 1,
         &map_sub::map_update_callback, this);

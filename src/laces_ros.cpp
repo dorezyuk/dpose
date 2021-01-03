@@ -141,11 +141,11 @@ laces_ros::get_cost(const Eigen::Vector3d& _se2) const {
     }
   }
 
-  // flip the derivate back to the original frame
+  // flip the derivate back to the original frame.
+  // note: we dont do this for the "theta"-part
   Eigen::Vector3d m_derivative;
   m_derivative.segment(0, 2) = m_to_k.rotation() * derivative.segment(0, 2);
   m_derivative(2) = derivative(2);
-  std::cout << derivative.transpose() << std::endl;
   return {sum, m_derivative};
 }
 
@@ -156,6 +156,7 @@ gradient_decent::solve(const laces_ros& _laces, const Eigen::Vector3d& _start,
   // for now we set it to 1 cell size.
   std::pair<float, Eigen::Vector3d> res{0.f, _start};
   for (size_t ii = 0; ii != _param.iter; ++ii) {
+    // get the derivative (d)
     auto d = _laces.get_cost(res.second);
 
     // scale the vector such that its norm is at most the _param.step
@@ -164,7 +165,7 @@ gradient_decent::solve(const laces_ros& _laces, const Eigen::Vector3d& _start,
     const auto norm_r = std::max(std::abs(d.second(2)), _param.step_r);
     d.second.segment(0, 2) *= (_param.step_t / norm_t);
     d.second(2) *= (_param.step_r / norm_r);
-    std::cout << d.second.transpose() << std::endl;
+
     // the "gradient decent"
     res.second += d.second;
     res.first = d.first;

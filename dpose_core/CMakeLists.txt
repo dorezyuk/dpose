@@ -17,25 +17,20 @@ catkin_package(
 ## Build ##
 ###########
 
-# the ros-independent part
-add_library(${PROJECT_NAME} src/dpose.cpp)
-target_include_directories(${PROJECT_NAME} PUBLIC src ${EIGEN3_INCLUDE_DIRS} ${OpenCV_INCLUDE_DIRS})
-target_link_libraries(${PROJECT_NAME} ${OpenCV_LIBS})
-
-# the ros-specific library
-add_library(${PROJECT_NAME}_ros src/dpose_ros.cpp)
-target_link_libraries(${PROJECT_NAME}_ros ${catkin_LIBRARIES} ${PROJECT_NAME})
-target_include_directories(${PROJECT_NAME}_ros PUBLIC ${catkin_INCLUDE_DIRS} src)
+add_library(${PROJECT_NAME} src/dpose_core.cpp)
+target_include_directories(${PROJECT_NAME} 
+  PUBLIC src ${EIGEN3_INCLUDE_DIRS} ${OpenCV_INCLUDE_DIRS} ${catkin_INCLUDE_DIRS})
+target_link_libraries(${PROJECT_NAME} ${OpenCV_LIBS} ${catkin_LIBRARIES})
 
 # test-node
 add_executable(${PROJECT_NAME}_node test/node.cpp)
-target_link_libraries(${PROJECT_NAME}_node ${PROJECT_NAME} ${PROJECT_NAME}_ros)
+target_link_libraries(${PROJECT_NAME}_node ${PROJECT_NAME})
 
 #############
 ## Install ##
 #############
 
-install(TARGETS ${PROJECT_NAME} ${PROJECT_NAME}_ros
+install(TARGETS ${PROJECT_NAME}
   ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
   LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
   RUNTIME DESTINATION ${CATKIN_GLOBAL_BIN_DESTINATION}

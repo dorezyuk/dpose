@@ -1,5 +1,4 @@
-#include <dpose_core/dpose.hpp>
-#include <dpose_core/dpose_ros.hpp>
+#include <dpose_core/dpose_core.hpp>
 #include <costmap_2d/footprint.h>
 #include <map_msgs/OccupancyGridUpdate.h>
 #include <nav_msgs/OccupancyGrid.h>

@@ -1,6 +1,6 @@
 <class_libraries>
   <library path="liblaces_ros">
-    <class type="dpose::LacesLayer"  base_class_type="costmap_2d::Layer">
+    <class type="dpose::DposeLayer"  base_class_type="costmap_2d::Layer">
       <description>Test class for dpose.</description>
     </class>
   </library>

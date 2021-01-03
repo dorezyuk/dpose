@@ -150,14 +150,25 @@ laces_ros::get_cost(const Eigen::Vector3d& _se2) const {
 }
 
 std::pair<float, Eigen::Vector3d>
-gradient_decent::solve(const laces_ros& _laces, const pose_msg& _start,
+gradient_decent::solve(const laces_ros& _laces, const Eigen::Vector3d& _start,
                        const gradient_decent::parameter& _param) {
   // super simple gradient decent algorithm with a limit on the max step
   // for now we set it to 1 cell size.
-  // auto res = std::make_pair(0.f, Eigen::Vector3d::Zero());
+  std::pair<float, Eigen::Vector3d> res{0.f, _start};
   for (size_t ii = 0; ii != _param.iter; ++ii) {
-    // const auto res = _laces.get_cost(_start);
+    auto update = _laces.get_cost(res.second);
+
+    // scale the vector such that its norm is at most the _param.step
+    const auto norm = std::max(update.second.segment(0, 2).norm(), _param.step);
+    update.second.segment(0, 2) *= (_param.step / norm);
+    // todo scale also the rotation
+    // the "gradient decent"
+    res.second += update.second;
+    res.first = update.first;
+    if (res.first <= _param.epsilon)
+      break;
   }
+  return res;
 }
 
 void
@@ -176,27 +187,26 @@ gm::PoseStamped
 to_pose(const Eigen::Vector3d _pose, const std::string& _frame) {
   gm::PoseStamped msg;
   msg.header.frame_id = _frame;
-  const auto yaw = std::atan2(_pose.y(), _pose.x());
+  msg.pose.position.x = _pose.x();
+  msg.pose.position.y = _pose.y();
   tf2::Quaternion q;
-  q.setRPY(0, 0, yaw);
+  q.setRPY(0, 0, _pose.z());
   msg.pose.orientation = tf2::toMsg(q);
   return msg;
 }
 
 void
 LacesLayer::updateCosts(costmap_2d::Costmap2D& _map, int, int, int, int) {
-  const auto res = impl_.get_cost(robot_pose_);
+  const auto res = gradient_decent::solve(impl_, robot_pose_, param_);
   ROS_INFO_STREAM("current cost " << res.first);
-  if (res.first) {
-    auto msg = to_pose(res.second, "map");
-    const auto origin_x = layered_costmap_->getCostmap()->getOriginX();
-    const auto origin_y = layered_costmap_->getCostmap()->getOriginY();
-    const auto res = layered_costmap_->getCostmap()->getResolution();
+  const auto origin_x = layered_costmap_->getCostmap()->getOriginX();
+  const auto origin_y = layered_costmap_->getCostmap()->getOriginY();
+  const auto resolution = layered_costmap_->getCostmap()->getResolution();
 
-    msg.pose.position.x = robot_pose_.x() * res + origin_x;
-    msg.pose.position.y = robot_pose_.y() * res + origin_y;
-    d_pub_.publish(msg);
-  }
+  auto msg = to_pose(res.second, "map");
+  msg.pose.position.x = msg.pose.position.x * resolution + origin_x;
+  msg.pose.position.y = msg.pose.position.y * resolution + origin_y;
+  d_pub_.publish(msg);
 }
 
 void
@@ -207,6 +217,9 @@ LacesLayer::onFootprintChanged() {
 
 void
 LacesLayer::onInitialize() {
+  param_.epsilon = 0.5;
+  param_.iter = 10;
+  param_.step = 2;
   ros::NodeHandle nh;
   d_pub_ =
       nh.advertise<gm::PoseStamped>("/navigation/move_base_flex/derivative", 1);

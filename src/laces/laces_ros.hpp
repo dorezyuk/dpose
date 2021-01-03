@@ -103,7 +103,7 @@ struct gradient_decent {
   };
 
   static std::pair<float, Eigen::Vector3d>
-  solve(const laces_ros& _laces, const pose_msg& _start,
+  solve(const laces_ros& _laces, const Eigen::Vector3d& _start,
         const parameter& _param);
 };
 
@@ -126,6 +126,7 @@ private:
   ros::Publisher d_pub_;
   Eigen::Vector3d robot_pose_;
   laces_ros impl_;
+  gradient_decent::parameter param_;
 };
 
 }  // namespace laces

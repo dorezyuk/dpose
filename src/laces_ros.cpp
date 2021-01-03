@@ -63,31 +63,14 @@ laces_ros::laces_ros(costmap_2d::Costmap2D& _cm,
     data_(init_data(_cm, _footprint)), cm_(&_cm) {}
 
 std::pair<float, Eigen::Vector3d>
-laces_ros::get_cost(const pose_msg& _msg) {
+laces_ros::get_cost(const Eigen::Vector3d& _se2) const {
   if (!cm_)
     throw std::runtime_error("no costmap provided");
 
-  // check if the robot-pose is planar - otherwise we cannot really deal with it
-  if (std::abs(_msg.orientation.x) > 1e-6 ||
-      std::abs(_msg.orientation.y) > 1e-6)
-    throw std::runtime_error("3-dimensional poses are not supported");
-
   // note: all computations are done in the cell space.
   // indedices are map (m), baselink (b) and kernel (k).
-  const auto res = cm_->getResolution();
-  if (res <= 0)
-    throw std::runtime_error("resolution must be positive");
-
-  // convert meters to cell-space
-  const eg::Vector2d b_origin(_msg.position.x, _msg.position.y);
-  const eg::Vector2d m_origin =
-      (b_origin - eg::Vector2d(cm_->getOriginX(), cm_->getOriginY())) *
-      (1. / res);
-
   // get the transform from map (m) to kernel (k)
-  const transform_type m_to_b =
-      to_eigen(m_origin.x(), m_origin.y(), tf2::getYaw(_msg.orientation));
-  // todo check if minus is correct
+  const transform_type m_to_b = to_eigen(_se2.x(), _se2.y(), _se2.z());
   const transform_type b_to_k = to_eigen(data_.d.center.x, data_.d.center.y, 0);
   const transform_type m_to_k = m_to_b * b_to_k;
 
@@ -158,19 +141,75 @@ laces_ros::get_cost(const pose_msg& _msg) {
     }
   }
 
-  return {sum, derivative};
+  // flip the derivate back to the original frame
+  Eigen::Vector3d m_derivative;
+  m_derivative.segment(0, 2) = m_to_k.rotation() * derivative.segment(0, 2);
+  m_derivative(2) = derivative(2);
+  std::cout << m_derivative.transpose() << std::endl;
+  return {sum, m_derivative};
+}
+
+std::pair<float, Eigen::Vector3d>
+gradient_decent::solve(const laces_ros& _laces, const pose_msg& _start,
+                       const gradient_decent::parameter& _param) {
+  // super simple gradient decent algorithm with a limit on the max step
+  // for now we set it to 1 cell size.
+  // auto res = std::make_pair(0.f, Eigen::Vector3d::Zero());
+  for (size_t ii = 0; ii != _param.iter; ++ii) {
+    // const auto res = _laces.get_cost(_start);
+  }
+}
+
+void
+LacesLayer::updateBounds(double robot_x, double robot_y, double robot_yaw,
+                         double*, double*, double*, double*) {
+  // we just set the pose
+  const auto origin_x = layered_costmap_->getCostmap()->getOriginX();
+  const auto origin_y = layered_costmap_->getCostmap()->getOriginY();
+  const auto res = layered_costmap_->getCostmap()->getResolution();
+  robot_pose_.x() = (robot_x - origin_x) / res;
+  robot_pose_.y() = (robot_y - origin_y) / res;
+  robot_pose_.z() = robot_yaw;
+}
+
+gm::PoseStamped
+to_pose(const Eigen::Vector3d _pose, const std::string& _frame) {
+  gm::PoseStamped msg;
+  msg.header.frame_id = _frame;
+  const auto yaw = std::atan2(_pose.y(), _pose.x());
+  tf2::Quaternion q;
+  q.setRPY(0, 0, yaw);
+  msg.pose.orientation = tf2::toMsg(q);
+  return msg;
 }
 
 void
 LacesLayer::updateCosts(costmap_2d::Costmap2D& _map, int, int, int, int) {
-  ROS_INFO("[laces]: staring");
+  const auto res = impl_.get_cost(robot_pose_);
+  ROS_INFO_STREAM("current cost " << res.first);
+  if (res.first) {
+    auto msg = to_pose(res.second, "map");
+    const auto origin_x = layered_costmap_->getCostmap()->getOriginX();
+    const auto origin_y = layered_costmap_->getCostmap()->getOriginY();
+    const auto res = layered_costmap_->getCostmap()->getResolution();
+
+    msg.pose.position.x = robot_pose_.x() * res + origin_x;
+    msg.pose.position.y = robot_pose_.y() * res + origin_y;
+    d_pub_.publish(msg);
+  }
 }
 
 void
 LacesLayer::onFootprintChanged() {
   ROS_INFO("[laces]: updating footprint");
-  data_ = init_data(*layered_costmap_->getCostmap(),
-                    layered_costmap_->getFootprint());
+  impl_ = laces_ros(*layered_costmap_);
+}
+
+void
+LacesLayer::onInitialize() {
+  ros::NodeHandle nh;
+  d_pub_ =
+      nh.advertise<gm::PoseStamped>("/navigation/move_base_flex/derivative", 1);
 }
 
 }  // namespace laces

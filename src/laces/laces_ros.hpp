@@ -33,6 +33,26 @@ to_eigen(double _x, double _y, double _yaw) noexcept {
   return Eigen::Translation2d(_x, _y) * Eigen::Rotation2Dd(_yaw);
 }
 
+static Eigen::Vector3d
+to_se2_in_map(const pose_msg& _pose, const cm::Costmap2D& _map) {
+  // check if the robot-pose is planar - otherwise we cannot really deal with it
+  if (std::abs(_pose.orientation.x) > 1e-6 ||
+      std::abs(_pose.orientation.y) > 1e-6)
+    throw std::runtime_error("3-dimensional poses are not supported");
+
+  const auto res = _map.getResolution();
+  if (res <= 0)
+    throw std::runtime_error("resolution must be positive");
+
+  // convert meters to cell-space
+  const eg::Vector2d pose(_pose.position.x, _pose.position.y);
+  const eg::Vector2d map(_map.getOriginX(), _map.getOriginY());
+  const eg::Vector2d origin = (pose - map) * (1. / res);
+
+  const auto yaw = tf2::getYaw(_pose.orientation);
+  return eg::Vector3d{origin.x(), origin.y(), yaw};
+}
+
 template <typename _T>
 box_type
 to_box(const _T& _x, const _T& _y) noexcept {
@@ -66,22 +86,31 @@ struct laces_ros {
   explicit laces_ros(costmap_2d::LayeredCostmap& _lcm);
 
   std::pair<float, Eigen::Vector3d>
-  get_cost(const pose_msg& _msg);
+  get_cost(const Eigen::Vector3d& _se2) const;
 
 private:
   data data_;
-  costmap_2d::Costmap2D* cm_ = nullptr;
+  // promise not to alter the costmap, but this class does not have a
+  // const-correctness concept
+  mutable costmap_2d::Costmap2D* cm_ = nullptr;
+};
+
+struct gradient_decent {
+  struct parameter {
+    size_t iter;
+    double step;
+    double epsilon;
+  };
+
+  static std::pair<float, Eigen::Vector3d>
+  solve(const laces_ros& _laces, const pose_msg& _start,
+        const parameter& _param);
 };
 
 struct LacesLayer : public costmap_2d::Layer {
   void
   updateBounds(double robot_x, double robot_y, double robot_yaw, double*,
-               double*, double*, double*) override {
-    // we just set the pose
-    robot_x_ = robot_x;
-    robot_y_ = robot_y;
-    robot_yaw_ = robot_yaw;
-  }
+               double*, double*, double*) override;
 
   void
   updateCosts(costmap_2d::Costmap2D& map, int, int, int, int) override;
@@ -89,9 +118,14 @@ struct LacesLayer : public costmap_2d::Layer {
   void
   onFootprintChanged() override;
 
+protected:
+  void
+  onInitialize() override;
+
 private:
-  double robot_x_, robot_y_, robot_yaw_;
-  data data_;
+  ros::Publisher d_pub_;
+  Eigen::Vector3d robot_pose_;
+  laces_ros impl_;
 };
 
 }  // namespace laces

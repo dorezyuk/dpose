@@ -105,7 +105,7 @@ struct map_sub {
       return;
     }
 
-    const auto res = impl_.get_cost(_msg.pose.pose);
+    const auto res = impl_.get_cost(to_se2_in_map(_msg.pose.pose, map_));
     ROS_INFO_STREAM("Cost is " << res.first);
     if(res.first) {
       d_pub_.publish(to_pose(res.second, "base_link"));

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <dpose/dpose.hpp>
+#include <dpose_core/dpose.hpp>
 
 // #include <gpp_interface/pre_planning_interface.hpp>
 #include <costmap_2d/costmap_2d.h>

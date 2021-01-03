@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <package format="2">
-  <name>dpose</name>
+  <name>dpose_core</name>
   <version>0.0.0</version>
   <description>The dpose package makes your footprint fit</description>
 
@@ -19,7 +19,4 @@
   <depend>boost</depend>
   <depend>libopencv-dev</depend>
 
-  <export>
-    <costmap_2d plugin="${prefix}/plugin.xml"/>
-  </export>
 </package>

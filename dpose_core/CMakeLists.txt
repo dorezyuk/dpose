@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.0.2)
-project(dpose)
+project(dpose_core)
 
 set(CATKIN_PACKAGES costmap_2d geometry_msgs tf2 tf2_geometry_msgs )
 find_package(catkin REQUIRED COMPONENTS ${CATKIN_PACKAGES})
@@ -23,7 +23,7 @@ target_include_directories(${PROJECT_NAME} PUBLIC src ${EIGEN3_INCLUDE_DIRS} ${O
 target_link_libraries(${PROJECT_NAME} ${OpenCV_LIBS})
 
 # the ros-specific library
-add_library(${PROJECT_NAME}_ros src/laces_ros.cpp)
+add_library(${PROJECT_NAME}_ros src/dpose_ros.cpp)
 target_link_libraries(${PROJECT_NAME}_ros ${catkin_LIBRARIES} ${PROJECT_NAME})
 target_include_directories(${PROJECT_NAME}_ros PUBLIC ${catkin_INCLUDE_DIRS} src)
 
@@ -45,7 +45,6 @@ install(DIRECTORY src/${PROJECT_NAME}/
   DESTINATION ${CATKIN_PACKAGE_INCLUDE_DESTINATION}
 )
 
-install(FILES plugin.xml DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION})
 
 #############
 ## Testing ##

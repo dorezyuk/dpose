@@ -1,4 +1,4 @@
-#include <dpose/dpose.hpp>
+#include <dpose_core/dpose.hpp>
 
 #include <algorithm>
 #include <array>

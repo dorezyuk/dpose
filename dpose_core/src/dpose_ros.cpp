@@ -1,4 +1,4 @@
-#include <dpose/laces_ros.hpp>
+#include <dpose_core/dpose_ros.hpp>
 
 #include <pluginlib/class_list_macros.h>
 

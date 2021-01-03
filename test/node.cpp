@@ -1,5 +1,5 @@
-#include <laces/laces.hpp>
-#include <laces/laces_ros.hpp>
+#include <dpose/dpose.hpp>
+#include <dpose/laces_ros.hpp>
 #include <costmap_2d/footprint.h>
 #include <map_msgs/OccupancyGridUpdate.h>
 #include <nav_msgs/OccupancyGrid.h>
@@ -7,7 +7,7 @@
 #include <nav_msgs/Odometry.h>
 #include <ros/ros.h>
 
-using namespace laces;
+using namespace dpose;
 
 constexpr char UNKNOWN = -1;
 constexpr char LETHAL = 100;

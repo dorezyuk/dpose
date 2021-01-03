@@ -1,8 +1,8 @@
-#include <laces/laces.hpp>
+#include <dpose/dpose.hpp>
 #include <gtest/gtest.h>
 
-using namespace laces;
-using namespace laces::internal;
+using namespace dpose;
+using namespace dpose::internal;
 
 // tests for the draw-polygon function
 

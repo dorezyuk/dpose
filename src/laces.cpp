@@ -1,4 +1,4 @@
-#include <laces/laces.hpp>
+#include <dpose/dpose.hpp>
 
 #include <algorithm>
 #include <array>
@@ -9,7 +9,7 @@
 #include <utility>
 #include <vector>
 
-namespace laces {
+namespace dpose {
 namespace internal {
 
 cv::Mat
@@ -342,4 +342,4 @@ get_cost(const data& _data, const cell_vector_type& _cells) {
                          });
 }
 
-}  // namespace laces
+}  // namespace dpose

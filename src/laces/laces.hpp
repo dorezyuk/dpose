@@ -3,7 +3,7 @@
 #include <opencv2/imgproc.hpp>
 #include <opencv2/opencv.hpp>
 
-namespace laces {
+namespace dpose {
 
 using cell_type = cv::Point2i;
 using cell_vector_type = std::vector<cell_type>;
@@ -133,4 +133,4 @@ get_cost(const data& _data, const cell_vector_type& _cells);
 float
 get_cost(const data& _data, const cell_type& _cell);
 
-}  // namespace laces
+}  // namespace dpose

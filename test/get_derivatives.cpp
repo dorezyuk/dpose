@@ -1,10 +1,10 @@
-#include <laces/laces.hpp>
+#include <dpose/dpose.hpp>
 #include <gtest/gtest.h>
 
 #include <opencv2/imgproc.hpp>
 
-using namespace laces;
-using namespace laces::internal;
+using namespace dpose;
+using namespace dpose::internal;
 
 TEST(get_derivatives, x_line) {
   cv::Mat image(20, 20, cv::DataType<uint8_t>::type, cv::Scalar(0));

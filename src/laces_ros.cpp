@@ -1,4 +1,4 @@
-#include <laces/laces_ros.hpp>
+#include <dpose/laces_ros.hpp>
 
 #include <pluginlib/class_list_macros.h>
 
@@ -6,7 +6,7 @@
 #include <cmath>
 #include <stdexcept>
 
-namespace laces {
+namespace dpose {
 
 cell_vector_type
 to_cells(const polygon_msg& _footprint, double _resolution) {
@@ -215,7 +215,7 @@ LacesLayer::updateCosts(costmap_2d::Costmap2D& _map, int, int, int, int) {
 
 void
 LacesLayer::onFootprintChanged() {
-  ROS_INFO("[laces]: updating footprint");
+  ROS_INFO("[dpose]: updating footprint");
   impl_ = laces_ros(*layered_costmap_);
 }
 
@@ -230,6 +230,6 @@ LacesLayer::onInitialize() {
       nh.advertise<gm::PoseStamped>("/navigation/move_base_flex/derivative", 1);
 }
 
-}  // namespace laces
+}  // namespace dpose
 
-PLUGINLIB_EXPORT_CLASS(laces::LacesLayer, costmap_2d::Layer)
+PLUGINLIB_EXPORT_CLASS(dpose::LacesLayer, costmap_2d::Layer)

@@ -1,8 +1,8 @@
-#include <laces/laces.hpp>
+#include <dpose/dpose.hpp>
 #include <gtest/gtest.h>
 
-using namespace laces;
-using namespace laces::internal;
+using namespace dpose;
+using namespace dpose::internal;
 
 // file contains tests of the get_circular_cells function
 

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <laces/laces.hpp>
+#include <dpose/dpose.hpp>
 
 // #include <gpp_interface/pre_planning_interface.hpp>
 #include <costmap_2d/costmap_2d.h>
@@ -15,7 +15,7 @@
 
 #include <vector>
 
-namespace laces {
+namespace dpose {
 
 namespace gm = geometry_msgs;
 namespace cm = costmap_2d;
@@ -130,4 +130,4 @@ private:
   gradient_decent::parameter param_;
 };
 
-}  // namespace laces
+}  // namespace dpose

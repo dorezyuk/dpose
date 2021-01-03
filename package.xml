@@ -1,8 +1,8 @@
 <?xml version="1.0"?>
 <package format="2">
-  <name>laces</name>
+  <name>dpose</name>
   <version>0.0.0</version>
-  <description>The laces package makes your footprint fit</description>
+  <description>The dpose package makes your footprint fit</description>
 
   <maintainer email="dmitrij.dorezyuk@hotmail.de">Dima Dorezyuk</maintainer>
 

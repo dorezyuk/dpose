@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.0.2)
-project(laces)
+project(dpose)
 
 set(CATKIN_PACKAGES costmap_2d geometry_msgs tf2 tf2_geometry_msgs )
 find_package(catkin REQUIRED COMPONENTS ${CATKIN_PACKAGES})
@@ -18,7 +18,7 @@ catkin_package(
 ###########
 
 # the ros-independent part
-add_library(${PROJECT_NAME} src/laces.cpp)
+add_library(${PROJECT_NAME} src/dpose.cpp)
 target_include_directories(${PROJECT_NAME} PUBLIC src ${EIGEN3_INCLUDE_DIRS} ${OpenCV_INCLUDE_DIRS})
 target_link_libraries(${PROJECT_NAME} ${OpenCV_LIBS})
 

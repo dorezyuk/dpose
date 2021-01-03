@@ -1,5 +1,5 @@
-#pragma once
-
+#ifndef DPOSE_CORE__DPOSE_CORE__HPP
+#define DPOSE_CORE__DPOSE_CORE__HPP
 
 #include <costmap_2d/costmap_2d.h>
 #include <costmap_2d/layer.h>
@@ -116,7 +116,7 @@ init_derivatives(cv::InputArray _image, const cell_type& _center);
 
 /**
  * @brief
- * 
+ *
  * @param _cells
  * @return data
  */
@@ -160,26 +160,6 @@ using box_type = Eigen::Matrix<double, 2, 5>;
 inline transform_type
 to_eigen(double _x, double _y, double _yaw) noexcept {
   return Eigen::Translation2d(_x, _y) * Eigen::Rotation2Dd(_yaw);
-}
-
-static Eigen::Vector3d
-to_se2_in_map(const pose_msg& _pose, const cm::Costmap2D& _map) {
-  // check if the robot-pose is planar - otherwise we cannot really deal with it
-  if (std::abs(_pose.orientation.x) > 1e-6 ||
-      std::abs(_pose.orientation.y) > 1e-6)
-    throw std::runtime_error("3-dimensional poses are not supported");
-
-  const auto res = _map.getResolution();
-  if (res <= 0)
-    throw std::runtime_error("resolution must be positive");
-
-  // convert meters to cell-space
-  const eg::Vector2d pose(_pose.position.x, _pose.position.y);
-  const eg::Vector2d map(_map.getOriginX(), _map.getOriginY());
-  const eg::Vector2d origin = (pose - map) * (1. / res);
-
-  const auto yaw = tf2::getYaw(_pose.orientation);
-  return eg::Vector3d{origin.x(), origin.y(), yaw};
 }
 
 template <typename _T>
@@ -260,3 +240,5 @@ private:
 };
 
 }  // namespace dpose
+
+#endif  // DPOSE_CORE__DPOSE_CORE__HPP

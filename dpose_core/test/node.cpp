@@ -1,8 +1,8 @@
 #include <dpose_core/dpose_core.hpp>
 #include <costmap_2d/footprint.h>
+#include <geometry_msgs/PoseStamped.h>
 #include <map_msgs/OccupancyGridUpdate.h>
 #include <nav_msgs/OccupancyGrid.h>
-#include <geometry_msgs/PoseStamped.h>
 #include <nav_msgs/Odometry.h>
 #include <ros/ros.h>
 
@@ -23,9 +23,29 @@ convert(unsigned char value) {
   }
 }
 
+static Eigen::Vector3d
+to_se2_in_map(const pose_msg& _pose, const cm::Costmap2D& _map) {
+  // check if the robot-pose is planar - otherwise we cannot really deal with it
+  if (std::abs(_pose.orientation.x) > 1e-6 ||
+      std::abs(_pose.orientation.y) > 1e-6)
+    throw std::runtime_error("3-dimensional poses are not supported");
+
+  const auto res = _map.getResolution();
+  if (res <= 0)
+    throw std::runtime_error("resolution must be positive");
+
+  // convert meters to cell-space
+  const eg::Vector2d pose(_pose.position.x, _pose.position.y);
+  const eg::Vector2d map(_map.getOriginX(), _map.getOriginY());
+  const eg::Vector2d origin = (pose - map) * (1. / res);
+
+  const auto yaw = tf2::getYaw(_pose.orientation);
+  return eg::Vector3d{origin.x(), origin.y(), yaw};
+}
+
 gm::PoseStamped
 to_pose(const Eigen::Vector3d _pose, const std::string& _frame) {
-  gm::PoseStamped  msg;
+  gm::PoseStamped msg;
   msg.header.frame_id = _frame;
   const auto yaw = std::atan2(_pose.y(), _pose.x());
   tf2::Quaternion q;
@@ -40,13 +60,14 @@ struct map_sub {
     fp_ = cm::makeFootprintFromParams(nh);
     ROS_INFO_STREAM("Footprint loaded with the size  " << fp_.size());
 
-    map_sub_ = nh.subscribe("/navigation/move_base_flex/global_costmap/costmap", 1, &map_sub::map_callback, this);
+    map_sub_ = nh.subscribe("/navigation/move_base_flex/global_costmap/costmap",
+                            1, &map_sub::map_callback, this);
     map_update_sub_ = nh.subscribe(
         "/navigation/move_base_flex/global_costmap/costmap_updates", 1,
         &map_sub::map_update_callback, this);
     odom_sub_ = nh.subscribe("/base_pose_ground_truth", 1,
                              &map_sub::odom_callback, this);
-    d_pub_ = nh.advertise<gm::PoseStamped>("derivative", 1);                             
+    d_pub_ = nh.advertise<gm::PoseStamped>("derivative", 1);
   }
 
   void
@@ -106,7 +127,7 @@ struct map_sub {
 
     const auto res = impl_.get_cost(to_se2_in_map(_msg.pose.pose, map_));
     ROS_INFO_STREAM("Cost is " << res.first);
-    if(res.first) {
+    if (res.first) {
       d_pub_.publish(to_pose(res.second, "base_link"));
     }
   }

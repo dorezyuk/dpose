@@ -98,7 +98,8 @@ private:
 struct gradient_decent {
   struct parameter {
     size_t iter;
-    double step;
+    double step_t;
+    double step_r;
     double epsilon;
   };
 

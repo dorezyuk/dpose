@@ -208,7 +208,7 @@ mark_gradient(const cell_type& _prev, const cell_type& _curr,
   if (is_valid(_curr, _image) && is_valid(_prev, _source) &&
       is_valid(_next, _source)) {
     _image.at<float>(_curr) =
-        _source.at<float>(_prev) - _source.at<float>(_next);
+         _source.at<float>(_next) - _source.at<float>(_prev);
   }
 }
 
@@ -231,7 +231,7 @@ angular_derivative(cv::InputArray _image, const cell_type& _center) {
 
   // now iterate over the all steps
   for (int ii = 0; ii <= distance; ++ii) {
-    const auto cells = get_circular_cells(_center, ii);
+    const auto cells = get_circular_cells(center, ii);
 
     // now we loop over the cells and get the gradient
     // we will need at least three points for this
@@ -285,7 +285,7 @@ init_data(const cell_vector_type& _cells) {
   cv::Mat inv(im1.rows, im1.cols, im1.type());
   cv::bitwise_not(im1, inv);
 
-  // not get the edt
+  // get the euclidean distance transform
   cv::Mat edt(im1.rows, im1.cols, cv::DataType<float>::type);
   cv::distanceTransform(inv, edt, cv::DIST_L2, cv::DIST_MASK_PRECISE);
 

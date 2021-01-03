@@ -145,7 +145,7 @@ laces_ros::get_cost(const Eigen::Vector3d& _se2) const {
   Eigen::Vector3d m_derivative;
   m_derivative.segment(0, 2) = m_to_k.rotation() * derivative.segment(0, 2);
   m_derivative(2) = derivative(2);
-  std::cout << m_derivative.transpose() << std::endl;
+  std::cout << derivative.transpose() << std::endl;
   return {sum, m_derivative};
 }
 
@@ -156,15 +156,18 @@ gradient_decent::solve(const laces_ros& _laces, const Eigen::Vector3d& _start,
   // for now we set it to 1 cell size.
   std::pair<float, Eigen::Vector3d> res{0.f, _start};
   for (size_t ii = 0; ii != _param.iter; ++ii) {
-    auto update = _laces.get_cost(res.second);
+    auto d = _laces.get_cost(res.second);
 
     // scale the vector such that its norm is at most the _param.step
-    const auto norm = std::max(update.second.segment(0, 2).norm(), _param.step);
-    update.second.segment(0, 2) *= (_param.step / norm);
-    // todo scale also the rotation
+    // (the scaling is done seperately for translation (t) and rotation (r))
+    const auto norm_t = std::max(d.second.segment(0, 2).norm(), _param.step_t);
+    const auto norm_r = std::max(std::abs(d.second(2)), _param.step_r);
+    d.second.segment(0, 2) *= (_param.step_t / norm_t);
+    d.second(2) *= (_param.step_r / norm_r);
+    std::cout << d.second.transpose() << std::endl;
     // the "gradient decent"
-    res.second += update.second;
-    res.first = update.first;
+    res.second += d.second;
+    res.first = d.first;
     if (res.first <= _param.epsilon)
       break;
   }
@@ -219,7 +222,8 @@ void
 LacesLayer::onInitialize() {
   param_.epsilon = 0.5;
   param_.iter = 10;
-  param_.step = 2;
+  param_.step_t = 2;
+  param_.step_r = 0.1;
   ros::NodeHandle nh;
   d_pub_ =
       nh.advertise<gm::PoseStamped>("/navigation/move_base_flex/derivative", 1);

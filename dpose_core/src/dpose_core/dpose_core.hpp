@@ -16,30 +16,27 @@
 #include <vector>
 
 namespace dpose_core {
-
-using cell_type = cv::Point2i;
-using cell_vector_type = std::vector<cell_type>;
-
-/// @brief POD holding the derivatives
-struct derivatives {
-  cv::Mat dx;        ///< derivative in x
-  cv::Mat dy;        ///< derivative in y
-  cv::Mat dtheta;    ///< derivative in theta
-  cell_type center;  ///< center of rotation
-};
+namespace internal {
 
 /// @brief POD holding all the data required for operation
 struct data {
-  cv::Mat edt;
-  derivatives d;
+  cv::Mat cost;     ///< cost matrix
+  cv::Mat d_x;      ///< derivative of the cost in x
+  cv::Mat d_y;      ///< derivative of the cost in y
+  cv::Mat d_theta;  ///< derivative of the cost in theta
+
+  Eigen::Vector2i center;  ///< center cell
 };
 
-/// @brief data type defining the gradient on a certain point
-using cost_type = cv::Scalar_<float>;
+/// @brief POD defining the parameters
+struct parameter {
+  unsigned int padding = 2;  ///< padding of the given footprint. setting
+};
 
-namespace internal {
-// code inside this namespace is not part of the public interface.
-// we put it here so we can actually unit-test it.
+using polygon = Eigen::Matrix<int, 2ul, Eigen::Dynamic>;
+using cell_type = cv::Point2i;
+using cell_vector_type = std::vector<cell_type>;
+
 
 /**
  * @brief Returns an image with a polygon defined by _cells
@@ -101,49 +98,14 @@ get_circular_cells(const cell_type& _center, size_t _radius) noexcept;
 cv::Mat
 angular_derivative(cv::InputArray _image, const cell_type& _center);
 
-/**
- * @brief Helper function to create the derivatives from an image.
- *
- * @param _image image for the derivative calculation
- * @param _center center of rotation
- * @return derivatives
- */
-derivatives
-init_derivatives(cv::InputArray _image, const cell_type& _center);
+
+data
+init_data(const polygon& _footprint, const parameter& _param);
+
+// cell_vector_type
+// to_cells(const polygon_msg& _footprint, double _resolution);
 
 }  // namespace internal
-
-/**
- * @brief
- *
- * @param _cells
- * @return data
- */
-data
-init_data(const cell_vector_type& _cells);
-
-/**
- * @brief Get the derivative object
- *
- * @param _data
- * @param _cells
- * @return cost_type
- */
-cost_type
-get_derivative(const derivatives& _data, const cell_vector_type& _cells);
-
-/**
- * @brief Get the cost object
- *
- * @param _data
- * @param _cells
- * @return float
- */
-float
-get_cost(const data& _data, const cell_vector_type& _cells);
-
-float
-get_cost(const data& _data, const cell_type& _cell);
 
 namespace gm = geometry_msgs;
 namespace cm = costmap_2d;
@@ -154,39 +116,14 @@ using pose_msg = gm::Pose;
 using polygon_msg = std::vector<gm::Point>;
 
 using transform_type = Eigen::Isometry2d;
-using box_type = Eigen::Matrix<double, 2, 5>;
 
 inline transform_type
 to_eigen(double _x, double _y, double _yaw) noexcept {
   return Eigen::Translation2d(_x, _y) * Eigen::Rotation2Dd(_yaw);
 }
 
-template <typename _T>
-box_type
-to_box(const _T& _x, const _T& _y) noexcept {
-  box_type box;
-  const auto x = static_cast<_T>(_x);
-  const auto y = static_cast<_T>(_y);
-  // order does not matter that much here
-  // clang-format off
-  box << 0, x, x, 0, 0,
-         0, 0, y, y, 0;
-  // clang-format on
-  return box;
-}
 
-inline box_type
-to_box(const costmap_2d::Costmap2D& _cm) noexcept {
-  return to_box(_cm.getSizeInCellsX(), _cm.getSizeInCellsY());
-}
 
-inline box_type
-to_box(const cv::Mat& _cm) noexcept {
-  return to_box(_cm.cols, _cm.rows);
-}
-
-cell_vector_type
-to_cells(const polygon_msg& _footprint, double _resolution);
 
 struct pose_gradient {
   pose_gradient() = default;
@@ -197,7 +134,7 @@ struct pose_gradient {
   get_cost(const Eigen::Vector3d& _se2) const;
 
 private:
-  data data_;
+  internal::data data_;
   // promise not to alter the costmap, but this class does not have a
   // const-correctness concept
   mutable costmap_2d::Costmap2D* cm_ = nullptr;

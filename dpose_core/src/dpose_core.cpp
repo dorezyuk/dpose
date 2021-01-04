@@ -59,28 +59,31 @@ _get_cost(const polygon& _fp, const parameter& _param) {
   // convert the eigen-polygon to opencv-cells
   const auto _cells = _to_open_cv(_fp);
 
-  assert(!_cells.empty() && "cells cannot be empty");
-
   // get the bounding box
   const cv::Rect bb = cv::boundingRect(_cells);
 
+  // we need distinct points
+  assert(!bb.empty() && "bounding box cannot be empty");
+
   // apply our padding
   cv::Size bb_size = bb.size();
-  bb_size.width += _param.padding;
-  bb_size.height += _param.padding;
+  bb_size.width += (_param.padding * 2);
+  bb_size.height += (_param.padding * 2);
 
   // setup the image and draw the cells
   cv::Mat image(bb_size, cv::DataType<uint8_t>::type, cv::Scalar(255));
-  cv::polylines(image, _cells, true, 0);
+  cv::polylines(image, _cells, true, cv::Scalar(0));
 
   // image cannot be just "white"
-  assert(cv::countNonZero(image) == image.cols * image.rows &&
+  assert(cv::imwrite("/tmp/poly.jpg", image));
+  assert(cv::countNonZero(image) != image.cols * image.rows &&
          "no polygon drawn");
 
   // get the euclidean distance transform
   cv::Mat edt(bb_size, cv::DataType<float>::type);
   cv::distanceTransform(image, edt, cv::DIST_L2, cv::DIST_MASK_PRECISE);
 
+  assert(cv::imwrite("/tmp/edt.jpg", edt));
   assert(cv::countNonZero(edt) > 0 && "distance transform failed");
 
   // we now apply "smoothing" on the edges of the polygon. this means, we add
@@ -244,7 +247,7 @@ _angular_derivative(cv::InputArray _image, const Eigen::Vector2i& _center) {
   // init the output image
   cv::Mat output(_image.size(), cv::DataType<float>::type, cv::Scalar(0));
   cv::Mat source = _image.getMat();
-  const cv::Point2i center(_center.x(), _center.y());
+  const cell_type center(_center.x(), _center.y());
 
   // now iterate over the all steps
   for (int ii = 0; ii <= distance; ++ii) {
@@ -286,8 +289,7 @@ init_data(const polygon& _footprint, const parameter& _param) {
   out.center = _footprint.rowwise().minCoeff() - padding;
 
   // now shift everything by the center, so we just have positive values
-  polygon footprint = _footprint - out.center;
-
+  polygon footprint = _footprint.colwise() - out.center;
   assert(footprint.array().minCoeff() == _param.padding &&
          "footprint shifting failed");
 
@@ -299,13 +301,11 @@ init_data(const polygon& _footprint, const parameter& _param) {
   cv::Sobel(out.cost, out.d_y, cv::DataType<float>::type, 0, 1, 3);
   out.d_theta = _angular_derivative(out.cost, out.center);
 
-#ifndef NDEBUG
   // safe the image if we are running in debug mode
-  cv::imwrite("/tmp/cost.jpg", out.cost);
-  cv::imwrite("/tmp/d_x.jpg", out.d_x);
-  cv::imwrite("/tmp/d_y.jpg", out.d_y);
-  cv::imwrite("/tmp/d_theta.jpg", out.d_theta);
-#endif
+  assert(cv::imwrite("/tmp/cost.jpg", out.cost * 10));
+  assert(cv::imwrite("/tmp/d_x.jpg", out.d_x * 10 + 100));
+  assert(cv::imwrite("/tmp/d_y.jpg", out.d_y * 10 + 100));
+  assert(cv::imwrite("/tmp/d_theta.jpg", out.d_theta * 10 + 100));
   return out;
 }
 

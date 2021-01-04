@@ -1,8 +1,8 @@
 <?xml version="1.0"?>
 <package format="2">
-  <name>laces</name>
+  <name>dpose_core</name>
   <version>0.0.0</version>
-  <description>The laces package makes your footprint fit</description>
+  <description>The dpose is a package for computing footprint derivatives</description>
 
   <maintainer email="dmitrij.dorezyuk@hotmail.de">Dima Dorezyuk</maintainer>
 
@@ -15,6 +15,7 @@
   <depend>tf2_geometry_msgs</depend>
 
   <!-- non-ros-related libs -->
-  <depend>boost</depend>
   <depend>libopencv-dev</depend>
+  <depend>eigen</depend>
+
 </package>

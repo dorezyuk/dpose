@@ -34,18 +34,33 @@ to_rectangle(const _T& w, const _T& h) noexcept {
   return box;
 }
 
-// inline box_type
-// to_box(const costmap_2d::Costmap2D& _cm) noexcept {
-//   return to_box(_cm.getSizeInCellsX(), _cm.getSizeInCellsY());
-// }
-
 namespace internal {
+
+/// @brief open-cv specific data-types
+using cell_type = cv::Point2i;
+using cell_vector_type = std::vector<cell_type>;
+
+/// @brief converts eigen to open-cv data
+cell_vector_type
+_to_open_cv(const polygon& _footprint) noexcept {
+  cell_vector_type cells;
+  cells.reserve(_footprint.cols());
+  for (int cc = 0; cc != _footprint.cols(); ++cc)
+    cells.emplace_back(_footprint(0, cc), _footprint(1, cc));
+
+  return cells;
+}
 
 /// @brief computes a cost-image based on the polygon
 /// @param _cells corners of a sparse polygon
 /// @param _param additional parameters
 cv::Mat
-_get_cost(const cell_vector_type& _cells, const parameter& _param) {
+_get_cost(const polygon& _fp, const parameter& _param) {
+  // convert the eigen-polygon to opencv-cells
+  const auto _cells = _to_open_cv(_fp);
+
+  assert(!_cells.empty() && "cells cannot be empty");
+
   // get the bounding box
   const cv::Rect bb = cv::boundingRect(_cells);
 
@@ -97,13 +112,10 @@ _get_cost(const cell_vector_type& _cells, const parameter& _param) {
   return smoothen;
 }
 
-/**
- * @brief helper to prune repetitions from get_circular_cells
- *
- * @param _cells the pre-output from get_circular_cells
- */
+/// @brief helper to prune repetitions from _get_circular_cells
+/// @param _cells the pre-output from _get_circular_cells
 void
-unique_cells(cell_vector_type& _cells) noexcept {
+_unique_cells(cell_vector_type& _cells) noexcept {
   if (_cells.empty())
     return;
   // use first unique to remove the overlaps
@@ -116,8 +128,11 @@ unique_cells(cell_vector_type& _cells) noexcept {
   _cells.erase(last, _cells.end());
 }
 
+/// @brief returns the cells around _center at the given _radius
+/// @param _center the center cell
+/// @param _radius the radius
 cell_vector_type
-get_circular_cells(const cell_type& _center, size_t _radius) noexcept {
+_get_circular_cells(const cell_type& _center, size_t _radius) noexcept {
   // adjusted from
   // https://github.com/opencv/opencv/blob/master/modules/imgproc/src/drawing.cpp
   int x = _radius, y = 0;
@@ -164,12 +179,13 @@ get_circular_cells(const cell_type& _center, size_t _radius) noexcept {
     reverse = !reverse;
   }
 
-  unique_cells(cells);
+  _unique_cells(cells);
   return cells;
 }
 
+/// @brief checks if the _cell is within the _image
 inline bool
-is_valid(const cell_type& _cell, const cv::Mat& _image) noexcept {
+_is_valid(const cell_type& _cell, const cv::Mat& _image) noexcept {
   return 0 <= _cell.x && _cell.x < _image.cols && 0 <= _cell.y &&
          _cell.y < _image.rows;
 }
@@ -178,7 +194,7 @@ is_valid(const cell_type& _cell, const cv::Mat& _image) noexcept {
  * @brief calculates the angular gradient given a _prev and _next cell.
  *
  * It is expected that _image and _source have the same size.
- * The method is a helper for angular_derivative.
+ * The method is a helper for _angular_derivative.
  *
  * @param _prev previous cell on a circle
  * @param _curr the cell of interest of a circle
@@ -187,31 +203,39 @@ is_valid(const cell_type& _cell, const cv::Mat& _image) noexcept {
  * @param _source image based on which we are computing the gradient
  */
 void
-mark_gradient(const cell_type& _prev, const cell_type& _curr,
-              const cell_type& _next, cv::Mat& _image,
-              const cv::Mat& _source) noexcept {
+_mark_gradient(const cell_type& _prev, const cell_type& _curr,
+               const cell_type& _next, cv::Mat& _image,
+               const cv::Mat& _source) noexcept {
   // skip if not all are valid
-  if (is_valid(_curr, _image) && is_valid(_prev, _source) &&
-      is_valid(_next, _source)) {
+  if (_is_valid(_curr, _image) && _is_valid(_prev, _source) &&
+      _is_valid(_next, _source)) {
     _image.at<float>(_curr) =
         _source.at<float>(_next) - _source.at<float>(_prev);
   }
 }
 
+/// @brief generates a rectangle with the size of _cm
 inline rectangle_type<int>
 _to_rectangle(const cv::Mat& _cm) noexcept {
-  return to_rectangle(_cm.cols, _cm.rows);
+  return to_rectangle<int>(_cm.cols, _cm.rows);
 }
 
+/// @brief returns the max distance from _image's corners to _cell
 inline int
-_max_distance(const cv::Mat& _image, const Eigen::Vector2i _cell) noexcept {
-  const rectangle_type<int> r = _to_rectangle(_image) - _cell;
-  const Eigen::Matrix<double, 1, 5ul> d = r.cast<double>().colwise().norm();
+_max_distance(const cv::Mat& _image, const Eigen::Vector2i& _cell) noexcept {
+  const rectangle_type<int> r = _to_rectangle(_image).colwise() - _cell;
+  const Eigen::Matrix<double, 1ul, 5ul> d = r.cast<double>().colwise().norm();
   return static_cast<int>(d.maxCoeff());
 }
 
+/**
+ * @brief calculates the "circular" derivate of _image around the _center cell
+ *
+ * @param _image image on which to perform the derivative
+ * @param _center center of rotation.
+ */
 cv::Mat
-angular_derivative(cv::InputArray _image, const Eigen::Vector2i& _center) {
+_angular_derivative(cv::InputArray _image, const Eigen::Vector2i& _center) {
   // get the distance
   const auto distance = _max_distance(_image.getMat(), _center);
 
@@ -224,7 +248,7 @@ angular_derivative(cv::InputArray _image, const Eigen::Vector2i& _center) {
 
   // now iterate over the all steps
   for (int ii = 0; ii <= distance; ++ii) {
-    const auto cells = get_circular_cells(center, ii);
+    const auto cells = _get_circular_cells(center, ii);
 
     // now we loop over the cells and get the gradient
     // we will need at least three points for this
@@ -232,31 +256,21 @@ angular_derivative(cv::InputArray _image, const Eigen::Vector2i& _center) {
       continue;
 
     // beginning and end are special
-    mark_gradient(*cells.rbegin(), *cells.begin(), *std::next(cells.begin()),
-                  output, source);
+    _mark_gradient(*cells.rbegin(), *cells.begin(), *std::next(cells.begin()),
+                   output, source);
 
     // iterate over all consecutive cells
     for (auto prev = cells.begin(), curr = std::next(prev),
               next = std::next(curr);
          next != cells.end(); ++prev, ++curr, ++next)
-      mark_gradient(*prev, *curr, *next, output, source);
+      _mark_gradient(*prev, *curr, *next, output, source);
 
     // now do the end
-    mark_gradient(*std::next(cells.rbegin()), *cells.rbegin(), *cells.begin(),
-                  output, source);
+    _mark_gradient(*std::next(cells.rbegin()), *cells.rbegin(), *cells.begin(),
+                   output, source);
   }
 
   return output;
-}
-
-cell_vector_type
-_to_open_cv(const polygon& _footprint) {
-  cell_vector_type cells;
-  cells.reserve(_footprint.cols());
-  for (int cc = 0; cc != _footprint.cols(); ++cc)
-    cells.emplace_back(_footprint(0, cc), _footprint(1, cc));
-
-  return cells;
 }
 
 data
@@ -271,43 +285,43 @@ init_data(const polygon& _footprint, const parameter& _param) {
   const Eigen::Vector2i padding(_param.padding, _param.padding);
   out.center = _footprint.rowwise().minCoeff() - padding;
 
-  // now shift everything by the center, so we just have positive values in the
-  // footprint
+  // now shift everything by the center, so we just have positive values
   polygon footprint = _footprint - out.center;
 
-  // some checks for the debuggers
   assert(footprint.array().minCoeff() == _param.padding &&
          "footprint shifting failed");
 
-  // now convert the eigen-polygon to opencv-cells
-  const auto cells = _to_open_cv(footprint);
-
   // get the cost image
-  out.cost = _get_cost(cells, _param);
+  out.cost = _get_cost(footprint, _param);
 
   // finally our three derivatives
   cv::Sobel(out.cost, out.d_x, cv::DataType<float>::type, 1, 0, 3);
   cv::Sobel(out.cost, out.d_y, cv::DataType<float>::type, 0, 1, 3);
-  out.d_theta = angular_derivative(out.cost, out.center);
+  out.d_theta = _angular_derivative(out.cost, out.center);
 
+#ifndef NDEBUG
+  // safe the image if we are running in debug mode
+  cv::imwrite("/tmp/cost.jpg", out.cost);
+  cv::imwrite("/tmp/d_x.jpg", out.d_x);
+  cv::imwrite("/tmp/d_y.jpg", out.d_y);
+  cv::imwrite("/tmp/d_theta.jpg", out.d_theta);
+#endif
   return out;
 }
 
-cell_vector_type
-to_cells(const polygon_msg& _footprint, double _resolution) {
-  // we have standards...
-  if (_resolution <= 0)
+data
+init_data(const costmap_2d::Costmap2D& _cm, const polygon_msg& _footprint) {
+  const auto res = _cm.getResolution();
+  if (res <= 0)
     throw std::runtime_error("resolution must be positive");
 
-  cell_vector_type cells(_footprint.size());
-  std::transform(_footprint.begin(), _footprint.end(), cells.begin(),
-                 [&](const polygon_msg::value_type& __msg) {
-                   // round to avoid unfair casting
-                   return cell_type{
-                       static_cast<int>(std::round(__msg.x / _resolution)),
-                       static_cast<int>(std::round(__msg.y / _resolution))};
-                 });
-  return cells;
+  polygon cells(2, _footprint.size());
+  for (size_t cc = 0; cc != cells.cols(); ++cc) {
+    cells(0, cc) = std::round(_footprint.at(cc).x / res);
+    cells(1, cc) = std::round(_footprint.at(cc).y / res);
+  }
+  const parameter param{2};
+  return init_data(cells, param);
 }
 
 }  // namespace internal
@@ -335,19 +349,21 @@ struct interval {
   _T min, max;
 };
 
-using cell_interval = interval<size_t>;
+using transform_type = Eigen::Isometry2d;
 
-inline internal::data
-init_data(const costmap_2d::Costmap2D& _cm, const polygon_msg& _footprint) {
-  // return init_data(to_cells(_footprint, _cm.getResolution()));
+inline transform_type
+to_eigen(double _x, double _y, double _yaw) noexcept {
+  return Eigen::Translation2d(_x, _y) * Eigen::Rotation2Dd(_yaw);
 }
+
+using cell_interval = interval<size_t>;
 
 pose_gradient::pose_gradient(costmap_2d::LayeredCostmap& _lcm) :
     pose_gradient(*_lcm.getCostmap(), _lcm.getFootprint()) {}
 
 pose_gradient::pose_gradient(costmap_2d::Costmap2D& _cm,
                              const polygon_msg& _footprint) :
-    data_(init_data(_cm, _footprint)), cm_(&_cm) {}
+    data_(internal::init_data(_cm, _footprint)), cm_(&_cm) {}
 
 std::pair<float, Eigen::Vector3d>
 pose_gradient::get_cost(const Eigen::Vector3d& _se2) const {
@@ -361,12 +377,13 @@ pose_gradient::get_cost(const Eigen::Vector3d& _se2) const {
   const transform_type b_to_k = to_eigen(data_.center.x(), data_.center.y(), 0);
   const transform_type m_to_k = m_to_b * b_to_k;
 
-  const box_type k_kernel_bb = to_box(data_.cost);
-  const box_type m_kernel_bb = m_to_k * k_kernel_bb;
+  const rectangle_type<double> k_kernel_bb =
+      internal::_to_rectangle(data_.cost).cast<double>();
+  const rectangle_type<double> m_kernel_bb = m_to_k * k_kernel_bb;
 
   // dirty rounding: we have to remove negative values, so we can cast to
   // unsigned int below
-  box_type cell_kernel_bb = m_kernel_bb.array().round().matrix();
+  rectangle_type<double> cell_kernel_bb = m_kernel_bb.array().round().matrix();
   const std::array<double, 2> cm_size{
       static_cast<double>(cm_->getSizeInCellsX()),
       static_cast<double>(cm_->getSizeInCellsY())};

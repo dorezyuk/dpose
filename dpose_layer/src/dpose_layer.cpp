@@ -54,7 +54,7 @@ DposeLayer::onFootprintChanged() {
 void
 DposeLayer::onInitialize() {
   param_.epsilon = 0.5;
-  param_.iter = 10;
+  param_.iter = 20;
   param_.step_t = 2;
   param_.step_r = 0.1;
   ros::NodeHandle nh("~");

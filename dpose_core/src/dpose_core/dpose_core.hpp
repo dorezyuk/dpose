@@ -8,12 +8,12 @@
 #include <tf2/utils.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
 
-#include <opencv2/imgproc.hpp>
 #include <opencv2/opencv.hpp>
 
 #include <Eigen/Dense>
 
 #include <vector>
+#include <utility>
 
 namespace dpose_core {
 namespace internal {
@@ -39,6 +39,7 @@ using polygon = Eigen::Matrix<int, 2ul, Eigen::Dynamic>;
 /// @brief constructs cost and its derivatives from the inputs
 /// @param _footprint the footprint (may or may not be closed)
 /// @param _param parameters for the operation
+/// @throws std::runtime_error if the _footprint is ill-formed
 data
 init_data(const polygon& _footprint, const parameter& _param);
 
@@ -46,12 +47,9 @@ init_data(const polygon& _footprint, const parameter& _param);
 
 namespace gm = geometry_msgs;
 namespace cm = costmap_2d;
-namespace eg = Eigen;
 
 using point_msg = gm::Point;
-using pose_msg = gm::Pose;
 using polygon_msg = std::vector<gm::Point>;
-
 
 struct pose_gradient {
   pose_gradient() = default;

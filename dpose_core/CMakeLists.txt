@@ -23,8 +23,8 @@ target_include_directories(${PROJECT_NAME}
 target_link_libraries(${PROJECT_NAME} ${OpenCV_LIBS} ${catkin_LIBRARIES})
 
 # test-node
-add_executable(${PROJECT_NAME}_node test/node.cpp)
-target_link_libraries(${PROJECT_NAME}_node ${PROJECT_NAME})
+# add_executable(${PROJECT_NAME}_node test/node.cpp)
+# target_link_libraries(${PROJECT_NAME}_node ${PROJECT_NAME})
 
 #############
 ## Install ##
@@ -44,12 +44,12 @@ install(DIRECTORY src/${PROJECT_NAME}/
 ## Testing ##
 #############
 
-if(CATKIN_ENABLE_TESTING)
-    ## Add gtest based cpp test target and link libraries
-    catkin_add_gtest(${PROJECT_NAME}_gtest 
-        test/draw_polygon.cpp
-        test/get_circular_cells.cpp)
-    if(TARGET ${PROJECT_NAME}_gtest)
-        target_link_libraries(${PROJECT_NAME}_gtest ${PROJECT_NAME})
-    endif()
-endif()
+# if(CATKIN_ENABLE_TESTING)
+#     ## Add gtest based cpp test target and link libraries
+#     catkin_add_gtest(${PROJECT_NAME}_gtest 
+#         test/draw_polygon.cpp
+#         test/get_circular_cells.cpp)
+#     if(TARGET ${PROJECT_NAME}_gtest)
+#         target_link_libraries(${PROJECT_NAME}_gtest ${PROJECT_NAME})
+#     endif()
+# endif()

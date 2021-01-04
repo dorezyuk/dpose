@@ -23,6 +23,8 @@ convert(unsigned char value) {
   }
 }
 
+using pose_msg = gm::Pose;
+
 static Eigen::Vector3d
 to_se2_in_map(const pose_msg& _pose, const cm::Costmap2D& _map) {
   // check if the robot-pose is planar - otherwise we cannot really deal with it

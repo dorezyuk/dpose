@@ -2,6 +2,8 @@
 
 #include <pluginlib/class_list_macros.h>
 
+#include <opencv2/imgproc.hpp>
+
 #include <algorithm>
 #include <array>
 #include <cassert>
@@ -15,7 +17,7 @@
 
 namespace dpose_core {
 
-/// @brief a closed rectangle
+/// @brief a closed rectangle (hence 5 columns)
 template <typename _T>
 using rectangle_type = Eigen::Matrix<_T, 2ul, 5ul>;
 
@@ -109,7 +111,7 @@ _get_cost(const polygon& _fp, const parameter& _param) {
   // has now the value offset, we need to "lift" all other costs by the offset.
   edt += offset;
 
-  // copy the distance transform within the mast into final image
+  // copy the distance transform within the mask into final image
   cv::copyTo(edt, smoothen, image);
 
   return smoothen;
@@ -133,7 +135,7 @@ _unique_cells(cell_vector_type& _cells) noexcept {
 
 /// @brief returns the cells around _center at the given _radius
 /// @param _center the center cell
-/// @param _radius the radius
+/// @param _radius the radius (also in cells)
 cell_vector_type
 _get_circular_cells(const cell_type& _center, size_t _radius) noexcept {
   // adjusted from
@@ -286,10 +288,10 @@ init_data(const polygon& _footprint, const parameter& _param) {
 
   // get first the center
   const Eigen::Vector2i padding(_param.padding, _param.padding);
-  out.center = _footprint.rowwise().minCoeff() - padding;
+  out.center = padding - _footprint.rowwise().minCoeff();
 
   // now shift everything by the center, so we just have positive values
-  polygon footprint = _footprint.colwise() - out.center;
+  polygon footprint = _footprint.colwise() + out.center;
   assert(footprint.array().minCoeff() == _param.padding &&
          "footprint shifting failed");
 
@@ -310,7 +312,7 @@ init_data(const polygon& _footprint, const parameter& _param) {
 }
 
 data
-init_data(const costmap_2d::Costmap2D& _cm, const polygon_msg& _footprint) {
+_init_data(const costmap_2d::Costmap2D& _cm, const polygon_msg& _footprint) {
   const auto res = _cm.getResolution();
   if (res <= 0)
     throw std::runtime_error("resolution must be positive");
@@ -320,14 +322,11 @@ init_data(const costmap_2d::Costmap2D& _cm, const polygon_msg& _footprint) {
     cells(0, cc) = std::round(_footprint.at(cc).x / res);
     cells(1, cc) = std::round(_footprint.at(cc).y / res);
   }
-  const parameter param{2};
+  const parameter param{3};
   return init_data(cells, param);
 }
 
 }  // namespace internal
-
-using cm_polygon = std::vector<costmap_2d::MapLocation>;
-using cm_map = costmap_2d::Costmap2D;
 
 /**
  * @brief interval defined by [min, max].
@@ -349,6 +348,7 @@ struct interval {
   _T min, max;
 };
 
+using cell_interval = interval<size_t>;
 using transform_type = Eigen::Isometry2d;
 
 inline transform_type
@@ -356,17 +356,19 @@ to_eigen(double _x, double _y, double _yaw) noexcept {
   return Eigen::Translation2d(_x, _y) * Eigen::Rotation2Dd(_yaw);
 }
 
-using cell_interval = interval<size_t>;
-
 pose_gradient::pose_gradient(costmap_2d::LayeredCostmap& _lcm) :
     pose_gradient(*_lcm.getCostmap(), _lcm.getFootprint()) {}
 
 pose_gradient::pose_gradient(costmap_2d::Costmap2D& _cm,
                              const polygon_msg& _footprint) :
-    data_(internal::init_data(_cm, _footprint)), cm_(&_cm) {}
+    data_(internal::_init_data(_cm, _footprint)), cm_(&_cm) {}
 
 std::pair<float, Eigen::Vector3d>
 pose_gradient::get_cost(const Eigen::Vector3d& _se2) const {
+  using rectangle_d = rectangle_type<double>;
+  using cm_polygon = std::vector<costmap_2d::MapLocation>;
+  using namespace internal;
+
   if (!cm_)
     throw std::runtime_error("no costmap provided");
 
@@ -374,16 +376,16 @@ pose_gradient::get_cost(const Eigen::Vector3d& _se2) const {
   // indedices are map (m), baselink (b) and kernel (k).
   // get the transform from map (m) to kernel (k)
   const transform_type m_to_b = to_eigen(_se2.x(), _se2.y(), _se2.z());
-  const transform_type b_to_k = to_eigen(data_.center.x(), data_.center.y(), 0);
+  const transform_type b_to_k =
+      to_eigen(-data_.center.x(), -data_.center.y(), 0);
   const transform_type m_to_k = m_to_b * b_to_k;
 
-  const rectangle_type<double> k_kernel_bb =
-      internal::_to_rectangle(data_.cost).cast<double>();
-  const rectangle_type<double> m_kernel_bb = m_to_k * k_kernel_bb;
+  const rectangle_d k_kernel_bb = _to_rectangle(data_.cost).cast<double>();
+  const rectangle_d m_kernel_bb = m_to_k * k_kernel_bb;
 
   // dirty rounding: we have to remove negative values, so we can cast to
   // unsigned int below
-  rectangle_type<double> cell_kernel_bb = m_kernel_bb.array().round().matrix();
+  rectangle_d cell_kernel_bb = m_kernel_bb.array().round().matrix();
   const std::array<double, 2> cm_size{
       static_cast<double>(cm_->getSizeInCellsX()),
       static_cast<double>(cm_->getSizeInCellsY())};
@@ -429,8 +431,8 @@ pose_gradient::get_cost(const Eigen::Vector3d& _se2) const {
         continue;
 
       // convert to the kernel frame
-      const eg::Vector2d m_cell(x, line.first);
-      const eg::Vector2i k_cell =
+      const Eigen::Vector2d m_cell(x, line.first);
+      const Eigen::Vector2i k_cell =
           (k_to_m * m_cell).array().round().cast<int>().matrix();
 
       // check if k_cell is valid

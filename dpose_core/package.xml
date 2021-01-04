@@ -16,5 +16,6 @@
 
   <!-- non-ros-related libs -->
   <depend>libopencv-dev</depend>
+  <depend>eigen</depend>
 
 </package>

@@ -48,8 +48,7 @@ if(CATKIN_ENABLE_TESTING)
     ## Add gtest based cpp test target and link libraries
     catkin_add_gtest(${PROJECT_NAME}_gtest 
         test/draw_polygon.cpp
-        test/get_circular_cells.cpp
-        test/get_derivatives.cpp)
+        test/get_circular_cells.cpp)
     if(TARGET ${PROJECT_NAME}_gtest)
         target_link_libraries(${PROJECT_NAME}_gtest ${PROJECT_NAME})
     endif()

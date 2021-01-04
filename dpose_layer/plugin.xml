@@ -1,5 +1,5 @@
 <class_libraries>
-  <library path="libdpose_layers">
+  <library path="libdpose_layer">
     <class type="dpose_layer::DposeLayer"  base_class_type="costmap_2d::Layer">
       <description>debug layer for the dpose package.</description>
     </class>

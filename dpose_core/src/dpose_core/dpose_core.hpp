@@ -2,7 +2,6 @@
 #define DPOSE_CORE__DPOSE_CORE__HPP
 
 #include <costmap_2d/costmap_2d.h>
-#include <costmap_2d/layer.h>
 #include <costmap_2d/layered_costmap.h>
 #include <geometry_msgs/Point.h>
 #include <geometry_msgs/PoseStamped.h>
@@ -16,7 +15,7 @@
 
 #include <vector>
 
-namespace dpose {
+namespace dpose_core {
 
 using cell_type = cv::Point2i;
 using cell_vector_type = std::vector<cell_type>;
@@ -189,10 +188,10 @@ to_box(const cv::Mat& _cm) noexcept {
 cell_vector_type
 to_cells(const polygon_msg& _footprint, double _resolution);
 
-struct laces_ros {
-  laces_ros() = default;
-  laces_ros(costmap_2d::Costmap2D& _cm, const polygon_msg& _footprint);
-  explicit laces_ros(costmap_2d::LayeredCostmap& _lcm);
+struct pose_gradient {
+  pose_gradient() = default;
+  pose_gradient(costmap_2d::Costmap2D& _cm, const polygon_msg& _footprint);
+  explicit pose_gradient(costmap_2d::LayeredCostmap& _lcm);
 
   std::pair<float, Eigen::Vector3d>
   get_cost(const Eigen::Vector3d& _se2) const;
@@ -213,10 +212,10 @@ struct gradient_decent {
   };
 
   static std::pair<float, Eigen::Vector3d>
-  solve(const laces_ros& _laces, const Eigen::Vector3d& _start,
+  solve(const pose_gradient& _laces, const Eigen::Vector3d& _start,
         const parameter& _param);
 };
 
-}  // namespace dpose
+}  // namespace dpose_core
 
 #endif  // DPOSE_CORE__DPOSE_CORE__HPP

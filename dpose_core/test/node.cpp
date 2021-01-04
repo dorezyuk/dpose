@@ -6,7 +6,7 @@
 #include <nav_msgs/Odometry.h>
 #include <ros/ros.h>
 
-using namespace dpose;
+using namespace dpose_core;
 
 constexpr char UNKNOWN = -1;
 constexpr char LETHAL = 100;
@@ -87,7 +87,7 @@ struct map_sub {
       for (unsigned int j = 0; j < info.width; ++j, ++index)
         char_map[index] = convert(_msg.data[index]);
 
-    impl_ = laces_ros(map_, fp_);
+    impl_ = pose_gradient(map_, fp_);
     ROS_INFO_STREAM("Done");
   }
 
@@ -138,7 +138,7 @@ private:
   costmap_2d::Costmap2D map_;
   std::vector<geometry_msgs::Point> fp_;
 
-  laces_ros impl_;
+  pose_gradient impl_;
 };
 
 int

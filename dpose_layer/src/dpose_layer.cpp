@@ -1,11 +1,11 @@
 #include <dpose_layer/dpose_layer.hpp>
 
 #include <pluginlib/class_list_macros.h>
-#include <tf2/Quaternion.h>
+#include <tf2/LinearMath/Quaternion.h>
 
 namespace dpose_layer {
 
-using namespace dpose;
+using namespace dpose_core;
 
 void
 DposeLayer::updateBounds(double robot_x, double robot_y, double robot_yaw,
@@ -48,7 +48,7 @@ DposeLayer::updateCosts(costmap_2d::Costmap2D& _map, int, int, int, int) {
 void
 DposeLayer::onFootprintChanged() {
   ROS_INFO("[dpose]: updating footprint");
-  impl_ = laces_ros(*layered_costmap_);
+  impl_ = pose_gradient(*layered_costmap_);
 }
 
 void
@@ -57,9 +57,8 @@ DposeLayer::onInitialize() {
   param_.iter = 10;
   param_.step_t = 2;
   param_.step_r = 0.1;
-  ros::NodeHandle nh;
-  d_pub_ =
-      nh.advertise<gm::PoseStamped>("/navigation/move_base_flex/derivative", 1);
+  ros::NodeHandle nh("~");
+  d_pub_ = nh.advertise<gm::PoseStamped>("derivative", 1);
 }
 }  // namespace dpose_layer
 

@@ -3,7 +3,7 @@
 
 #include <dpose_core/dpose_core.hpp>
 
-#include <costmap_2d::Layer>
+#include <costmap_2d/layer.h>
 
 #include <Eigen/Dense>
 
@@ -21,14 +21,15 @@ struct DposeLayer : public costmap_2d::Layer {
   onFootprintChanged() override;
 
 protected:
+
   void
   onInitialize() override;
 
 private:
   ros::Publisher d_pub_;
   Eigen::Vector3d robot_pose_;
-  laces_ros impl_;
-  gradient_decent::parameter param_;
+  dpose_core::pose_gradient impl_;
+  dpose_core::gradient_decent::parameter param_;
 };
 
 }  // namespace dpose_layer

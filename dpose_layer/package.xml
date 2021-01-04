@@ -17,4 +17,8 @@
   <depend>dpose_core</depend>
   <depend>pluginlib</depend>
 
+  <export>
+    <costmap_2d plugin="${prefix}/plugin.xml" />
+  </export>
+
 </package>

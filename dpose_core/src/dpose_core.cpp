@@ -456,15 +456,14 @@ pose_gradient::get_cost(const Eigen::Vector3d& _se2) const {
 }
 
 std::pair<float, Eigen::Vector3d>
-gradient_decent::solve(const pose_gradient& _laces,
-                       const Eigen::Vector3d& _start,
+gradient_decent::solve(const pose_gradient& _pg, const Eigen::Vector3d& _start,
                        const gradient_decent::parameter& _param) {
   // super simple gradient decent algorithm with a limit on the max step
   // for now we set it to 1 cell size.
   std::pair<float, Eigen::Vector3d> res{0.f, _start};
   for (size_t ii = 0; ii != _param.iter; ++ii) {
     // get the derivative (d)
-    auto d = _laces.get_cost(res.second);
+    auto d = _pg.get_cost(res.second);
 
     // scale the vector such that its norm is at most the _param.step
     // (the scaling is done seperately for translation (t) and rotation (r))

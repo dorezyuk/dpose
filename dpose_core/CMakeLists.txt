@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.0.2)
 project(dpose_core)
 
-set(CATKIN_PACKAGES costmap_2d geometry_msgs tf2 tf2_geometry_msgs )
+set(CATKIN_PACKAGES costmap_2d geometry_msgs)
 find_package(catkin REQUIRED COMPONENTS ${CATKIN_PACKAGES})
 find_package(Eigen3 REQUIRED)
 find_package(OpenCV REQUIRED)
@@ -22,10 +22,6 @@ target_include_directories(${PROJECT_NAME}
   PUBLIC src ${EIGEN3_INCLUDE_DIRS} ${OpenCV_INCLUDE_DIRS} ${catkin_INCLUDE_DIRS})
 target_link_libraries(${PROJECT_NAME} ${OpenCV_LIBS} ${catkin_LIBRARIES})
 
-# test-node
-# add_executable(${PROJECT_NAME}_node test/node.cpp)
-# target_link_libraries(${PROJECT_NAME}_node ${PROJECT_NAME})
-
 #############
 ## Install ##
 #############
@@ -39,17 +35,3 @@ install(TARGETS ${PROJECT_NAME}
 install(DIRECTORY src/${PROJECT_NAME}/
   DESTINATION ${CATKIN_PACKAGE_INCLUDE_DESTINATION}
 )
-
-#############
-## Testing ##
-#############
-
-# if(CATKIN_ENABLE_TESTING)
-#     ## Add gtest based cpp test target and link libraries
-#     catkin_add_gtest(${PROJECT_NAME}_gtest 
-#         test/draw_polygon.cpp
-#         test/get_circular_cells.cpp)
-#     if(TARGET ${PROJECT_NAME}_gtest)
-#         target_link_libraries(${PROJECT_NAME}_gtest ${PROJECT_NAME})
-#     endif()
-# endif()

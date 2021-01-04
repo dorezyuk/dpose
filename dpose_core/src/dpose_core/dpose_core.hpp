@@ -4,16 +4,13 @@
 #include <costmap_2d/costmap_2d.h>
 #include <costmap_2d/layered_costmap.h>
 #include <geometry_msgs/Point.h>
-#include <geometry_msgs/PoseStamped.h>
-#include <tf2/utils.h>
-#include <tf2_geometry_msgs/tf2_geometry_msgs.h>
 
 #include <opencv2/opencv.hpp>
 
 #include <Eigen/Dense>
 
-#include <vector>
 #include <utility>
+#include <vector>
 
 namespace dpose_core {
 namespace internal {
@@ -45,12 +42,34 @@ init_data(const polygon& _footprint, const parameter& _param);
 
 }  // namespace internal
 
-namespace gm = geometry_msgs;
 namespace cm = costmap_2d;
 
-using point_msg = gm::Point;
-using polygon_msg = std::vector<gm::Point>;
+/// @brief ros-specific polygon definition
+using polygon_msg = std::vector<geometry_msgs::Point>;
 
+/**
+ * @brief computes a pose-gradient from the given costmap
+ *
+ * This is most-likely the entry-point for this lib.
+ * Use pose_gradient::get_cost to obtain the cost and the gradient.
+ * The input pose is must be in the global frame of the provided costmap.
+ *
+ * @code{cpp}
+ * // include this header
+ * #include <dpose_core/dpose_core.hpp>
+ *
+ * // construct an instance from your costmap and the footprint
+ * dpose_core::pose_gradient pg(my_costmap, my_footprint);
+ *
+ * // get the gradient for a pose
+ * const auto res = pg.get_cost(my_pose);
+ * @endcode
+ *
+ * You can use this class for your own optimization, or reuse the
+ * gradient-decent solver below.
+ *
+ * The output is in the global frame.
+ */
 struct pose_gradient {
   pose_gradient() = default;
   pose_gradient(costmap_2d::Costmap2D& _cm, const polygon_msg& _footprint);
@@ -66,7 +85,15 @@ private:
   mutable costmap_2d::Costmap2D* cm_ = nullptr;
 };
 
+/**
+ * @brief gradient decent optimizer for the pose_gradient.
+ *
+ * Will perform the gradient decent until a termination condition is met.
+ * The decent ends, if either the maximum iterations are reached or if the cost
+ * lies below the epsilon bound.
+ */
 struct gradient_decent {
+  /// @brief parameter for the optimization
   struct parameter {
     size_t iter;
     double step_t;
@@ -75,7 +102,7 @@ struct gradient_decent {
   };
 
   static std::pair<float, Eigen::Vector3d>
-  solve(const pose_gradient& _laces, const Eigen::Vector3d& _start,
+  solve(const pose_gradient& _pg, const Eigen::Vector3d& _start,
         const parameter& _param);
 };
 

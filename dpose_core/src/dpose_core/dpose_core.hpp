@@ -71,6 +71,8 @@ using polygon_msg = std::vector<geometry_msgs::Point>;
  * The output is in the global frame.
  */
 struct pose_gradient {
+  using parameter = internal::parameter;
+
   pose_gradient() = default;
   pose_gradient(costmap_2d::Costmap2D& _cm, const polygon_msg& _footprint);
   explicit pose_gradient(costmap_2d::LayeredCostmap& _lcm);
@@ -101,9 +103,11 @@ struct gradient_decent {
     double epsilon;
   };
 
-  static std::pair<float, Eigen::Vector3d>
-  solve(const pose_gradient& _pg, const Eigen::Vector3d& _start,
-        const parameter& _param);
+  std::pair<float, Eigen::Vector3d>
+  solve(const pose_gradient& _pg, const Eigen::Vector3d& _start) const;
+
+private:
+  parameter param_;
 };
 
 }  // namespace dpose_core

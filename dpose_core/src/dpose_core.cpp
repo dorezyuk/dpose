@@ -456,26 +456,26 @@ pose_gradient::get_cost(const Eigen::Vector3d& _se2) const {
 }
 
 std::pair<float, Eigen::Vector3d>
-gradient_decent::solve(const pose_gradient& _pg, const Eigen::Vector3d& _start,
-                       const gradient_decent::parameter& _param) {
+gradient_decent::solve(const pose_gradient& _pg,
+                       const Eigen::Vector3d& _start) const {
   // super simple gradient decent algorithm with a limit on the max step
   // for now we set it to 1 cell size.
   std::pair<float, Eigen::Vector3d> res{0.f, _start};
-  for (size_t ii = 0; ii != _param.iter; ++ii) {
+  for (size_t ii = 0; ii != param_.iter; ++ii) {
     // get the derivative (d)
     auto d = _pg.get_cost(res.second);
 
     // scale the vector such that its norm is at most the _param.step
     // (the scaling is done seperately for translation (t) and rotation (r))
-    const auto norm_t = std::max(d.second.segment(0, 2).norm(), _param.step_t);
-    const auto norm_r = std::max(std::abs(d.second(2)), _param.step_r);
-    d.second.segment(0, 2) *= (_param.step_t / norm_t);
-    d.second(2) *= (_param.step_r / norm_r);
+    const auto norm_t = std::max(d.second.segment(0, 2).norm(), param_.step_t);
+    const auto norm_r = std::max(std::abs(d.second(2)), param_.step_r);
+    d.second.segment(0, 2) *= (param_.step_t / norm_t);
+    d.second(2) *= (param_.step_r / norm_r);
 
     // the "gradient decent"
     res.second += d.second;
     res.first = d.first;
-    if (res.first <= _param.epsilon)
+    if (res.first <= param_.epsilon)
       break;
   }
   return res;

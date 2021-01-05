@@ -16,4 +16,6 @@
   <depend>libopencv-dev</depend>
   <depend>eigen</depend>
 
+  <test_depend>rostest</test_depend>
+
 </package>

@@ -1,11 +1,15 @@
 #include <dpose_layer/dpose_layer.hpp>
 
+#include <geometry_msgs/PoseStamped.h>
 #include <pluginlib/class_list_macros.h>
 #include <tf2/LinearMath/Quaternion.h>
+#include <tf2/utils.h>
+#include <tf2_geometry_msgs/tf2_geometry_msgs.h>
 
 namespace dpose_layer {
 
 using namespace dpose_core;
+using geometry_msgs::PoseStamped;
 
 void
 DposeLayer::updateBounds(double robot_x, double robot_y, double robot_yaw,
@@ -19,9 +23,9 @@ DposeLayer::updateBounds(double robot_x, double robot_y, double robot_yaw,
   robot_pose_.z() = robot_yaw;
 }
 
-gm::PoseStamped
+PoseStamped
 to_pose(const Eigen::Vector3d _pose, const std::string& _frame) {
-  gm::PoseStamped msg;
+  PoseStamped msg;
   msg.header.frame_id = _frame;
   msg.pose.position.x = _pose.x();
   msg.pose.position.y = _pose.y();
@@ -33,7 +37,7 @@ to_pose(const Eigen::Vector3d _pose, const std::string& _frame) {
 
 void
 DposeLayer::updateCosts(costmap_2d::Costmap2D& _map, int, int, int, int) {
-  const auto res = gradient_decent::solve(impl_, robot_pose_, param_);
+  const auto res = opt_.solve(impl_, robot_pose_);
   ROS_INFO_STREAM("current cost " << res.first);
   const auto origin_x = layered_costmap_->getCostmap()->getOriginX();
   const auto origin_y = layered_costmap_->getCostmap()->getOriginY();
@@ -48,17 +52,20 @@ DposeLayer::updateCosts(costmap_2d::Costmap2D& _map, int, int, int, int) {
 void
 DposeLayer::onFootprintChanged() {
   ROS_INFO("[dpose]: updating footprint");
-  impl_ = pose_gradient(*layered_costmap_);
+  impl_ = pose_gradient(*layered_costmap_, {3});
 }
 
 void
 DposeLayer::onInitialize() {
-  param_.epsilon = 0.5;
-  param_.iter = 20;
-  param_.step_t = 2;
-  param_.step_r = 0.1;
+  gradient_decent::parameter param;
+  param.epsilon = 0.5;
+  param.iter = 20;
+  param.step_t = 2;
+  param.step_r = 0.1;
+
+  opt_ = gradient_decent(std::move(param));
   ros::NodeHandle nh("~");
-  d_pub_ = nh.advertise<gm::PoseStamped>("derivative", 1);
+  d_pub_ = nh.advertise<PoseStamped>("derivative", 1);
 }
 }  // namespace dpose_layer
 

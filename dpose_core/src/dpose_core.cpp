@@ -19,7 +19,7 @@ namespace dpose_core {
 
 /// @brief a closed rectangle (hence 5 columns)
 template <typename _T>
-using rectangle_type = Eigen::Matrix<_T, 2ul, 5ul>;
+using rectangle_type = Eigen::Matrix<_T, 2UL, 5UL>;
 
 /// @brief constructs a rectangle with the given width and height
 /// @param w width of the rectangle
@@ -36,6 +36,7 @@ to_rectangle(const _T& w, const _T& h) noexcept {
   return box;
 }
 
+/// @brief contains our open-cv related operations
 namespace internal {
 
 /// @brief open-cv specific data-types
@@ -229,18 +230,16 @@ _to_rectangle(const cv::Mat& _cm) noexcept {
 inline int
 _max_distance(const cv::Mat& _image, const Eigen::Vector2i& _cell) noexcept {
   const rectangle_type<int> r = _to_rectangle(_image).colwise() - _cell;
-  const Eigen::Matrix<double, 1ul, 5ul> d = r.cast<double>().colwise().norm();
+  const Eigen::Matrix<double, 1UL, 5UL> d = r.cast<double>().colwise().norm();
   return static_cast<int>(d.maxCoeff());
 }
 
-/**
- * @brief calculates the "circular" derivate of _image around the _center cell
- *
- * @param _image image on which to perform the derivative
- * @param _center center of rotation.
- */
+/// @brief calculates the "circular" derivate of _image around the _center cell
+/// @param _image image on which to perform the derivative
+/// @param _center center of rotation.
 cv::Mat
-_angular_derivative(cv::InputArray _image, const Eigen::Vector2i& _center) {
+_angular_derivative(cv::InputArray _image,
+                    const Eigen::Vector2i& _center) noexcept {
   // get the distance
   const auto distance = _max_distance(_image.getMat(), _center);
 
@@ -252,6 +251,7 @@ _angular_derivative(cv::InputArray _image, const Eigen::Vector2i& _center) {
   const cell_type center(_center.x(), _center.y());
 
   // now iterate over the all steps
+  // todo we can actually start from 1 and drop the check below
   for (int ii = 0; ii <= distance; ++ii) {
     const auto cells = _get_circular_cells(center, ii);
 
@@ -278,6 +278,7 @@ _angular_derivative(cv::InputArray _image, const Eigen::Vector2i& _center) {
   return output;
 }
 
+// function is exposed to the user
 data
 init_data(const polygon& _footprint, const parameter& _param) {
   // we need an area
@@ -292,7 +293,7 @@ init_data(const polygon& _footprint, const parameter& _param) {
 
   // now shift everything by the center, so we just have positive values
   polygon footprint = _footprint.colwise() + out.center;
-  assert(footprint.array().minCoeff() == _param.padding &&
+  assert(footprint.array().minCoeff() == static_cast<int>(_param.padding) &&
          "footprint shifting failed");
 
   // get the cost image
@@ -303,7 +304,7 @@ init_data(const polygon& _footprint, const parameter& _param) {
   cv::Sobel(out.cost, out.d_y, cv::DataType<float>::type, 0, 1, 3);
   out.d_theta = _angular_derivative(out.cost, out.center);
 
-  // safe the image if we are running in debug mode
+  // safe the image if we are running in debug mode (and scale the images)
   assert(cv::imwrite("/tmp/cost.jpg", out.cost * 10));
   assert(cv::imwrite("/tmp/d_x.jpg", out.d_x * 10 + 100));
   assert(cv::imwrite("/tmp/d_y.jpg", out.d_y * 10 + 100));
@@ -312,18 +313,21 @@ init_data(const polygon& _footprint, const parameter& _param) {
 }
 
 data
-_init_data(const costmap_2d::Costmap2D& _cm, const polygon_msg& _footprint) {
+_init_data(const costmap_2d::Costmap2D& _cm, const polygon_msg& _footprint,
+           const parameter& _param) {
   const auto res = _cm.getResolution();
   if (res <= 0)
     throw std::runtime_error("resolution must be positive");
 
+  // convert the message to a eigen-polygon
   polygon cells(2, _footprint.size());
-  for (size_t cc = 0; cc != cells.cols(); ++cc) {
+  for (int cc = 0; cc != cells.cols(); ++cc) {
     cells(0, cc) = std::round(_footprint.at(cc).x / res);
     cells(1, cc) = std::round(_footprint.at(cc).y / res);
   }
-  const parameter param{3};
-  return init_data(cells, param);
+
+  // call the actual impl
+  return init_data(cells, _param);
 }
 
 }  // namespace internal
@@ -356,12 +360,14 @@ to_eigen(double _x, double _y, double _yaw) noexcept {
   return Eigen::Translation2d(_x, _y) * Eigen::Rotation2Dd(_yaw);
 }
 
-pose_gradient::pose_gradient(costmap_2d::LayeredCostmap& _lcm) :
-    pose_gradient(*_lcm.getCostmap(), _lcm.getFootprint()) {}
-
 pose_gradient::pose_gradient(costmap_2d::Costmap2D& _cm,
-                             const polygon_msg& _footprint) :
-    data_(internal::_init_data(_cm, _footprint)), cm_(&_cm) {}
+                             const polygon_msg& _footprint,
+                             const parameter& _param) :
+    data_(internal::_init_data(_cm, _footprint, _param)), cm_(&_cm) {}
+
+pose_gradient::pose_gradient(costmap_2d::LayeredCostmap& _lcm,
+                             const parameter& _param) :
+    pose_gradient(*_lcm.getCostmap(), _lcm.getFootprint(), _param) {}
 
 std::pair<float, Eigen::Vector3d>
 pose_gradient::get_cost(const Eigen::Vector3d& _se2) const {
@@ -405,6 +411,7 @@ pose_gradient::get_cost(const Eigen::Vector3d& _se2) const {
   }
 
   // get the cells of the dense outline
+  // todo check if i can replace this with something faster
   cm_->polygonOutlineCells(sparse_outline, dense_outline);
 
   // convert the cells into line-intervals
@@ -455,27 +462,50 @@ pose_gradient::get_cost(const Eigen::Vector3d& _se2) const {
   return {sum, m_derivative};
 }
 
+tolerance::sphere_tolerance::sphere_tolerance(double _rad) :
+    rad_(std::abs(_rad)) {}
+
+tolerance::box_tolerance::box_tolerance(const pose& _box) :
+    box_(_box.array().abs().matrix()) {}
+
+tolerance::box_tolerance::box_tolerance(double _size) :
+    box_tolerance(pose(_size, _size)) {}
+
+tolerance::tolerance() : impl_(new none_tolerance()) {}
+
+tolerance::tolerance(const mode& _m, const Eigen::Vector2d& _center) {
+  switch (_m) {
+    case mode::NONE: impl_.reset(new none_tolerance()); break;
+    case mode::SPHERE: impl_.reset(new sphere_tolerance(_center.norm())); break;
+    case mode::BOX: impl_.reset(new box_tolerance(_center)); break;
+  }
+}
+
+gradient_decent::gradient_decent(parameter&& _param) noexcept :
+    param_(std::move(_param)) {}
+
 std::pair<float, Eigen::Vector3d>
-gradient_decent::solve(const pose_gradient& _pg, const Eigen::Vector3d& _start,
-                       const gradient_decent::parameter& _param) {
+gradient_decent::solve(const pose_gradient& _pg,
+                       const Eigen::Vector3d& _start) const {
   // super simple gradient decent algorithm with a limit on the max step
   // for now we set it to 1 cell size.
-  std::pair<float, Eigen::Vector3d> res{0.f, _start};
-  for (size_t ii = 0; ii != _param.iter; ++ii) {
+  std::pair<float, Eigen::Vector3d> res{0.0F, _start};
+  for (size_t ii = 0; ii != param_.iter; ++ii) {
     // get the derivative (d)
     auto d = _pg.get_cost(res.second);
 
     // scale the vector such that its norm is at most the _param.step
     // (the scaling is done seperately for translation (t) and rotation (r))
-    const auto norm_t = std::max(d.second.segment(0, 2).norm(), _param.step_t);
-    const auto norm_r = std::max(std::abs(d.second(2)), _param.step_r);
-    d.second.segment(0, 2) *= (_param.step_t / norm_t);
-    d.second(2) *= (_param.step_r / norm_r);
+    const auto norm_t = std::max(d.second.segment(0, 2).norm(), param_.step_t);
+    const auto norm_r = std::max(std::abs(d.second(2)), param_.step_r);
+    d.second.segment(0, 2) *= (param_.step_t / norm_t);
+    d.second(2) *= (param_.step_r / norm_r);
 
     // the "gradient decent"
     res.second += d.second;
     res.first = d.first;
-    if (res.first <= _param.epsilon)
+    if (res.first <= param_.epsilon ||
+        !param_.tol.within(_start.segment(0, 2), res.second.segment(0, 2)))
       break;
   }
   return res;

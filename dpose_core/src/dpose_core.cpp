@@ -233,14 +233,12 @@ _max_distance(const cv::Mat& _image, const Eigen::Vector2i& _cell) noexcept {
   return static_cast<int>(d.maxCoeff());
 }
 
-/**
- * @brief calculates the "circular" derivate of _image around the _center cell
- *
- * @param _image image on which to perform the derivative
- * @param _center center of rotation.
- */
+/// @brief calculates the "circular" derivate of _image around the _center cell
+/// @param _image image on which to perform the derivative
+/// @param _center center of rotation.
 cv::Mat
-_angular_derivative(cv::InputArray _image, const Eigen::Vector2i& _center) {
+_angular_derivative(cv::InputArray _image,
+                    const Eigen::Vector2i& _center) noexcept {
   // get the distance
   const auto distance = _max_distance(_image.getMat(), _center);
 
@@ -252,6 +250,7 @@ _angular_derivative(cv::InputArray _image, const Eigen::Vector2i& _center) {
   const cell_type center(_center.x(), _center.y());
 
   // now iterate over the all steps
+  // todo we can actually start from 1 and drop the check below
   for (int ii = 0; ii <= distance; ++ii) {
     const auto cells = _get_circular_cells(center, ii);
 
@@ -303,7 +302,7 @@ init_data(const polygon& _footprint, const parameter& _param) {
   cv::Sobel(out.cost, out.d_y, cv::DataType<float>::type, 0, 1, 3);
   out.d_theta = _angular_derivative(out.cost, out.center);
 
-  // safe the image if we are running in debug mode
+  // safe the image if we are running in debug mode (and scale the images)
   assert(cv::imwrite("/tmp/cost.jpg", out.cost * 10));
   assert(cv::imwrite("/tmp/d_x.jpg", out.d_x * 10 + 100));
   assert(cv::imwrite("/tmp/d_y.jpg", out.d_y * 10 + 100));
@@ -312,18 +311,21 @@ init_data(const polygon& _footprint, const parameter& _param) {
 }
 
 data
-_init_data(const costmap_2d::Costmap2D& _cm, const polygon_msg& _footprint) {
+_init_data(const costmap_2d::Costmap2D& _cm, const polygon_msg& _footprint,
+           const parameter& _param) {
   const auto res = _cm.getResolution();
   if (res <= 0)
     throw std::runtime_error("resolution must be positive");
 
+  // convert the message to a eigen-polygon
   polygon cells(2, _footprint.size());
   for (size_t cc = 0; cc != cells.cols(); ++cc) {
     cells(0, cc) = std::round(_footprint.at(cc).x / res);
     cells(1, cc) = std::round(_footprint.at(cc).y / res);
   }
-  const parameter param{3};
-  return init_data(cells, param);
+
+  // call the actual impl
+  return init_data(cells, _param);
 }
 
 }  // namespace internal
@@ -356,12 +358,14 @@ to_eigen(double _x, double _y, double _yaw) noexcept {
   return Eigen::Translation2d(_x, _y) * Eigen::Rotation2Dd(_yaw);
 }
 
-pose_gradient::pose_gradient(costmap_2d::LayeredCostmap& _lcm) :
-    pose_gradient(*_lcm.getCostmap(), _lcm.getFootprint()) {}
-
 pose_gradient::pose_gradient(costmap_2d::Costmap2D& _cm,
-                             const polygon_msg& _footprint) :
-    data_(internal::_init_data(_cm, _footprint)), cm_(&_cm) {}
+                             const polygon_msg& _footprint,
+                             const parameter& _param) :
+    data_(internal::_init_data(_cm, _footprint, _param)), cm_(&_cm) {}
+
+pose_gradient::pose_gradient(costmap_2d::LayeredCostmap& _lcm,
+                             const parameter& _param) :
+    pose_gradient(*_lcm.getCostmap(), _lcm.getFootprint(), _param) {}
 
 std::pair<float, Eigen::Vector3d>
 pose_gradient::get_cost(const Eigen::Vector3d& _se2) const {
@@ -405,6 +409,7 @@ pose_gradient::get_cost(const Eigen::Vector3d& _se2) const {
   }
 
   // get the cells of the dense outline
+  // todo check if i can replace this with something faster
   cm_->polygonOutlineCells(sparse_outline, dense_outline);
 
   // convert the cells into line-intervals
@@ -440,6 +445,7 @@ pose_gradient::get_cost(const Eigen::Vector3d& _se2) const {
           k_cell(1) >= data_.cost.rows)
         continue;
 
+      // todo get the index once
       sum += data_.cost.at<float>(k_cell(1), k_cell(0));
       derivative(0) += data_.d_x.at<float>(k_cell(1), k_cell(0));
       derivative(1) += data_.d_y.at<float>(k_cell(1), k_cell(0));
@@ -457,6 +463,7 @@ pose_gradient::get_cost(const Eigen::Vector3d& _se2) const {
 
 gradient_decent::gradient_decent(const parameter& _param) noexcept :
     param_(_param) {}
+
 gradient_decent::gradient_decent(parameter&& _param) noexcept :
     param_(_param) {}
 

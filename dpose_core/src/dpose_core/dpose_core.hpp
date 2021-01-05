@@ -37,6 +37,7 @@ using polygon = Eigen::Matrix<int, 2ul, Eigen::Dynamic>;
 /// @param _footprint the footprint (may or may not be closed)
 /// @param _param parameters for the operation
 /// @throws std::runtime_error if the _footprint is ill-formed
+/// @note will safe some images to "/tmp" if compiled as assert enabled
 data
 init_data(const polygon& _footprint, const parameter& _param);
 
@@ -74,8 +75,9 @@ struct pose_gradient {
   using parameter = internal::parameter;
 
   pose_gradient() = default;
-  pose_gradient(costmap_2d::Costmap2D& _cm, const polygon_msg& _footprint);
-  explicit pose_gradient(costmap_2d::LayeredCostmap& _lcm);
+  pose_gradient(costmap_2d::Costmap2D& _cm, const polygon_msg& _footprint,
+                const parameter& _param);
+  pose_gradient(costmap_2d::LayeredCostmap& _lcm, const parameter& _param);
 
   std::pair<float, Eigen::Vector3d>
   get_cost(const Eigen::Vector3d& _se2) const;

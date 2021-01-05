@@ -1,7 +1,5 @@
 #include <dpose_core/dpose_core.hpp>
 
-#include <pluginlib/class_list_macros.h>
-
 #include <opencv2/imgproc.hpp>
 
 #include <algorithm>
@@ -251,14 +249,12 @@ _angular_derivative(cv::InputArray _image,
   const cell_type center(_center.x(), _center.y());
 
   // now iterate over the all steps
-  // todo we can actually start from 1 and drop the check below
-  for (int ii = 0; ii <= distance; ++ii) {
+  for (int ii = 1; ii <= distance; ++ii) {
     const auto cells = _get_circular_cells(center, ii);
 
     // now we loop over the cells and get the gradient
     // we will need at least three points for this
-    if (cells.size() < 3)
-      continue;
+    assert(cells.size() > 2 && "invalid circular cells");
 
     // beginning and end are special
     _mark_gradient(*cells.rbegin(), *cells.begin(), *std::next(cells.begin()),
@@ -287,11 +283,11 @@ init_data(const polygon& _footprint, const parameter& _param) {
 
   data out;
 
-  // get first the center
+  // get the center
   const Eigen::Vector2i padding(_param.padding, _param.padding);
   out.center = padding - _footprint.rowwise().minCoeff();
 
-  // now shift everything by the center, so we just have positive values
+  // shift everything by the center, so we just have positive values
   polygon footprint = _footprint.colwise() + out.center;
   assert(footprint.array().minCoeff() == static_cast<int>(_param.padding) &&
          "footprint shifting failed");
@@ -299,7 +295,7 @@ init_data(const polygon& _footprint, const parameter& _param) {
   // get the cost image
   out.cost = _get_cost(footprint, _param);
 
-  // finally our three derivatives
+  // get our three derivatives
   cv::Sobel(out.cost, out.d_x, cv::DataType<float>::type, 1, 0, 3);
   cv::Sobel(out.cost, out.d_y, cv::DataType<float>::type, 0, 1, 3);
   out.d_theta = _angular_derivative(out.cost, out.center);
@@ -455,7 +451,7 @@ pose_gradient::get_cost(const Eigen::Vector3d& _se2) const {
   }
 
   // flip the derivate back to the original frame.
-  // note: we dont do this for the "theta"-part
+  // note: we don't do this for the "theta"-part
   Eigen::Vector3d m_derivative;
   m_derivative.segment(0, 2) = m_to_k.rotation() * derivative.segment(0, 2);
   m_derivative(2) = derivative(2);
@@ -474,6 +470,7 @@ tolerance::box_tolerance::box_tolerance(double _size) :
 tolerance::tolerance() : impl_(new none_tolerance()) {}
 
 tolerance::tolerance(const mode& _m, const Eigen::Vector2d& _center) {
+  // our "dispatcher". use the compiler assert that all cases are covered
   switch (_m) {
     case mode::NONE: impl_.reset(new none_tolerance()); break;
     case mode::SPHERE: impl_.reset(new sphere_tolerance(_center.norm())); break;

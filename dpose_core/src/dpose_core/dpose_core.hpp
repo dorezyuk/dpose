@@ -9,6 +9,7 @@
 
 #include <Eigen/Dense>
 
+#include <memory>
 #include <utility>
 #include <vector>
 
@@ -27,11 +28,11 @@ struct data {
 
 /// @brief POD defining the parameters
 struct parameter {
-  unsigned int padding = 2;  ///< padding of the given footprint. setting
+  unsigned int padding = 2;  ///< padding of the given footprint (in cells)
 };
 
 /// @brief polygon where first row holds the x, and second row y values.
-using polygon = Eigen::Matrix<int, 2ul, Eigen::Dynamic>;
+using polygon = Eigen::Matrix<int, 2UL, Eigen::Dynamic>;
 
 /// @brief constructs cost and its derivatives from the inputs
 /// @param _footprint the footprint (may or may not be closed)
@@ -90,11 +91,110 @@ private:
 };
 
 /**
+ * @brief class for tolerance checks.
+ *
+ * Given the points _a and _b, this class will check if _a is within a
+ * tolerance of _b. The "within" can be either within a sphere or within a box.
+ *
+ * Pass one of the modes (tolerance::mode) to the c'tor, in order to determine
+ * the "within" condition.
+ *
+ * @code{cpp}
+ * // include this header
+ * #include <gpose_core/dpose_core.hpp>
+ *
+ * // create a tolerance of a box mode with the size 4x6
+ * tolerance t(tolerance::mode::BOX, {2, 3})
+ *
+ * // now check is two points are within the tolerance
+ * std::cout << t.within({10, 12}, {11, 9}) << std::endl; // true
+ * std::cout << t.within({10, 12}, {13, 9}) << std::endl; // false
+ * @endcode
+ *
+ * todo test this class
+ */
+struct tolerance {
+  /// @brief diffent "modes"
+  enum class mode { NONE, SPHERE, BOX };
+
+  using pose = Eigen::Vector2d;
+
+  /**
+   * @brief noop-tolerance.
+   *
+   * All other tolerance concepts will extend this class.
+   * We will use dynmic polymorphism in order to implement different concepts.
+   */
+  struct none_tolerance {
+    virtual ~none_tolerance() = default;
+
+    inline virtual bool
+    within(const pose& _a __attribute__((unused)),
+           const pose& _b __attribute__((unused))) const noexcept {
+      return true;
+    }
+  };
+
+  /**
+   * @brief tolerance on a sphere
+   *
+   * The point _a is within the tolerance to _b, if their normed difference is
+   * below the rad_ parameter.
+   *
+   * @note: _rad will be redrived as pose.norm() from the tolerance::tolerance
+   * call.
+   */
+  struct sphere_tolerance : public none_tolerance {
+    explicit sphere_tolerance(double _rad);
+
+    inline bool
+    within(const pose& _a, const pose& _b) const noexcept final {
+      return (_a - _b).norm() <= rad_;
+    }
+
+  private:
+    double rad_;  ///< radius
+  };
+
+  /**
+   * @brief tolerance on a box
+   *
+   * The point _a is within the tolerance of _b if _b fits in a box of the size
+   * box_ * 2 centered around _a.
+   */
+  struct box_tolerance : public none_tolerance {
+    explicit box_tolerance(double size);
+    explicit box_tolerance(const pose& _pose);
+
+    inline bool
+    within(const pose& _a, const pose& _b) const noexcept final {
+      return (((_a - _b).array().abs() - box_.array()) <= 0).all();
+    }
+
+  private:
+    pose box_;  ///< half size of the box
+  };
+
+  tolerance();
+  tolerance(const mode& _m, const pose& _center);
+
+  inline bool
+  within(const pose& _a, const pose& _b) const noexcept {
+    return impl_->within(_a, _b);
+  }
+
+private:
+  std::unique_ptr<none_tolerance> impl_;
+};
+
+/**
  * @brief gradient decent optimizer for the pose_gradient.
  *
  * Will perform the gradient decent until a termination condition is met.
- * The decent ends, if either the maximum iterations are reached or if the cost
- * lies below the epsilon bound.
+ * The decent ends
+ * - if either the maximum iterations are reached,
+ * - if the cost lies below the epsilon bound,
+ * - if the derived position lies outside of the tolerance tol w.r.t _start.
  */
 struct gradient_decent {
   /// @brief parameter for the optimization
@@ -103,6 +203,7 @@ struct gradient_decent {
     double step_t = 1;     ///< maximal step size for translation (in cells)
     double step_r = 0.1;   ///< maximal step size for rotation (in rads)
     double epsilon = 0.1;  ///< cost-threshold for termination
+    tolerance tol;         ///< maximal distance from _start
   };
 
   gradient_decent() = default;

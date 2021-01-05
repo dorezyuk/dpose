@@ -19,7 +19,7 @@ namespace dpose_core {
 
 /// @brief a closed rectangle (hence 5 columns)
 template <typename _T>
-using rectangle_type = Eigen::Matrix<_T, 2ul, 5ul>;
+using rectangle_type = Eigen::Matrix<_T, 2UL, 5UL>;
 
 /// @brief constructs a rectangle with the given width and height
 /// @param w width of the rectangle
@@ -36,6 +36,7 @@ to_rectangle(const _T& w, const _T& h) noexcept {
   return box;
 }
 
+/// @brief contains our open-cv related operations
 namespace internal {
 
 /// @brief open-cv specific data-types
@@ -229,7 +230,7 @@ _to_rectangle(const cv::Mat& _cm) noexcept {
 inline int
 _max_distance(const cv::Mat& _image, const Eigen::Vector2i& _cell) noexcept {
   const rectangle_type<int> r = _to_rectangle(_image).colwise() - _cell;
-  const Eigen::Matrix<double, 1ul, 5ul> d = r.cast<double>().colwise().norm();
+  const Eigen::Matrix<double, 1UL, 5UL> d = r.cast<double>().colwise().norm();
   return static_cast<int>(d.maxCoeff());
 }
 
@@ -277,6 +278,7 @@ _angular_derivative(cv::InputArray _image,
   return output;
 }
 
+// function is exposed to the user
 data
 init_data(const polygon& _footprint, const parameter& _param) {
   // we need an area
@@ -291,7 +293,7 @@ init_data(const polygon& _footprint, const parameter& _param) {
 
   // now shift everything by the center, so we just have positive values
   polygon footprint = _footprint.colwise() + out.center;
-  assert(footprint.array().minCoeff() == _param.padding &&
+  assert(footprint.array().minCoeff() == static_cast<int>(_param.padding) &&
          "footprint shifting failed");
 
   // get the cost image
@@ -319,7 +321,7 @@ _init_data(const costmap_2d::Costmap2D& _cm, const polygon_msg& _footprint,
 
   // convert the message to a eigen-polygon
   polygon cells(2, _footprint.size());
-  for (size_t cc = 0; cc != cells.cols(); ++cc) {
+  for (int cc = 0; cc != cells.cols(); ++cc) {
     cells(0, cc) = std::round(_footprint.at(cc).x / res);
     cells(1, cc) = std::round(_footprint.at(cc).y / res);
   }
@@ -329,6 +331,44 @@ _init_data(const costmap_2d::Costmap2D& _cm, const polygon_msg& _footprint,
 }
 
 }  // namespace internal
+
+// discrete_polygon
+// raytrace(const cell& _begin, const cell& _end) noexcept {
+//   // adjusted from ros - speed-up with eigen's magic
+//   const Eigen::Array2i delta_raw = _end - _begin;
+//   const cell delta = delta_raw.abs();
+
+//   // auxilary stuff
+//   cell::Index max_row, min_row;
+//   const int den = delta.maxCoeff(&max_row);
+//   const int add = delta.minCoeff(&min_row);
+//   const int size = den;
+//   int num = den / 2;
+
+//   // the minor is zero at max
+//   cell inc_minor = delta_raw.sign();
+//   cell inc_major = inc_minor;
+//   inc_minor[max_row] = 0;
+//   inc_major[min_row] = 0;
+
+//   // the running vars
+//   cell curr = _begin;
+//   discrete_polygon ray(2, size);
+
+//   // mind the smaller sign
+//   for (int ii = 0; ii < size; ++ii) {
+//     ray.col(ii) = curr;
+
+//     num += add;
+//     if (num >= den) {
+//       num -= den;
+//       curr += inc_minor;
+//     }
+//     curr += inc_major;
+//   }
+
+//   return ray;
+// }
 
 /**
  * @brief interval defined by [min, max].
@@ -461,6 +501,25 @@ pose_gradient::get_cost(const Eigen::Vector3d& _se2) const {
   return {sum, m_derivative};
 }
 
+tolerance::sphere_tolerance::sphere_tolerance(double _rad) :
+    rad_(std::abs(_rad)) {}
+
+tolerance::box_tolerance::box_tolerance(const pose& _box) :
+    box_(_box.array().abs().matrix()) {}
+
+tolerance::box_tolerance::box_tolerance(double _size) :
+    box_tolerance(pose(_size, _size)) {}
+
+tolerance::tolerance() : impl_(new none_tolerance()) {}
+
+tolerance::tolerance(const mode& _m, const Eigen::Vector2d& _center) {
+  switch (_m) {
+    case mode::NONE: impl_.reset(new none_tolerance()); break;
+    case mode::SPHERE: impl_.reset(new sphere_tolerance(_center.norm())); break;
+    case mode::BOX: impl_.reset(new box_tolerance(_center)); break;
+  }
+}
+
 gradient_decent::gradient_decent(const parameter& _param) noexcept :
     param_(_param) {}
 
@@ -472,7 +531,7 @@ gradient_decent::solve(const pose_gradient& _pg,
                        const Eigen::Vector3d& _start) const {
   // super simple gradient decent algorithm with a limit on the max step
   // for now we set it to 1 cell size.
-  std::pair<float, Eigen::Vector3d> res{0.f, _start};
+  std::pair<float, Eigen::Vector3d> res{0.0F, _start};
   for (size_t ii = 0; ii != param_.iter; ++ii) {
     // get the derivative (d)
     auto d = _pg.get_cost(res.second);

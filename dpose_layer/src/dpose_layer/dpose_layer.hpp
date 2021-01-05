@@ -29,7 +29,7 @@ private:
   ros::Publisher d_pub_;
   Eigen::Vector3d robot_pose_;
   dpose_core::pose_gradient impl_;
-  dpose_core::gradient_decent::parameter param_;
+  dpose_core::gradient_decent opt_;
 };
 
 }  // namespace dpose_layer

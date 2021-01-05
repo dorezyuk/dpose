@@ -1,7 +1,12 @@
-cmake_minimum_required(VERSION 3.0.2)
+cmake_minimum_required(VERSION 3.6.0)
 project(dpose_core)
 
 set(CATKIN_PACKAGES costmap_2d geometry_msgs)
+add_compile_options(-Wpedantic -Wall -Wextra)
+
+# the clang-tidy checks are optional
+set(CMAKE_CXX_CLANG_TIDY clang-tidy -checks=-*,clang-analyzer-cplusplus*,clang-diagnostic-*,clang-analyzer-*)
+
 find_package(catkin REQUIRED COMPONENTS ${CATKIN_PACKAGES})
 find_package(Eigen3 REQUIRED)
 find_package(OpenCV REQUIRED)
@@ -18,9 +23,14 @@ catkin_package(
 ###########
 
 add_library(${PROJECT_NAME} src/dpose_core.cpp)
-target_include_directories(${PROJECT_NAME} 
-  PUBLIC src ${EIGEN3_INCLUDE_DIRS} ${OpenCV_INCLUDE_DIRS} ${catkin_INCLUDE_DIRS})
-target_link_libraries(${PROJECT_NAME} ${OpenCV_LIBS} ${catkin_LIBRARIES})
+target_include_directories(${PROJECT_NAME} PUBLIC src )
+target_include_directories(${PROJECT_NAME} PUBLIC SYSTEM 
+  ${EIGEN3_INCLUDE_DIRS}
+  ${OpenCV_INCLUDE_DIRS}
+  ${catkin_INCLUDE_DIRS})
+target_link_libraries(${PROJECT_NAME}
+  ${OpenCV_LIBS}
+  ${catkin_LIBRARIES})
 
 #############
 ## Install ##

@@ -455,6 +455,11 @@ pose_gradient::get_cost(const Eigen::Vector3d& _se2) const {
   return {sum, m_derivative};
 }
 
+gradient_decent::gradient_decent(const parameter& _param) noexcept :
+    param_(_param) {}
+gradient_decent::gradient_decent(parameter&& _param) noexcept :
+    param_(_param) {}
+
 std::pair<float, Eigen::Vector3d>
 gradient_decent::solve(const pose_gradient& _pg,
                        const Eigen::Vector3d& _start) const {

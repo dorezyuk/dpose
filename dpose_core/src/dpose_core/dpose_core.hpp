@@ -97,17 +97,21 @@ private:
 struct gradient_decent {
   /// @brief parameter for the optimization
   struct parameter {
-    size_t iter;
-    double step_t;
-    double step_r;
-    double epsilon;
+    size_t iter = 10;      ///< maximal number of steps
+    double step_t = 1;     ///< maximal step size for translation (in cells)
+    double step_r = 0.1;   ///< maximal step size for rotation (in rads)
+    double epsilon = 0.1;  ///< cost-threshold for termination
   };
+
+  gradient_decent() = default;
+  gradient_decent(const parameter& _param) noexcept;
+  gradient_decent(parameter&& _param) noexcept;
 
   std::pair<float, Eigen::Vector3d>
   solve(const pose_gradient& _pg, const Eigen::Vector3d& _start) const;
 
 private:
-  parameter param_;
+  parameter param_;  ///< parameterization for the optimization
 };
 
 }  // namespace dpose_core

@@ -520,11 +520,8 @@ tolerance::tolerance(const mode& _m, const Eigen::Vector2d& _center) {
   }
 }
 
-gradient_decent::gradient_decent(const parameter& _param) noexcept :
-    param_(_param) {}
-
 gradient_decent::gradient_decent(parameter&& _param) noexcept :
-    param_(_param) {}
+    param_(std::move(_param)) {}
 
 std::pair<float, Eigen::Vector3d>
 gradient_decent::solve(const pose_gradient& _pg,
@@ -546,7 +543,8 @@ gradient_decent::solve(const pose_gradient& _pg,
     // the "gradient decent"
     res.second += d.second;
     res.first = d.first;
-    if (res.first <= param_.epsilon)
+    if (res.first <= param_.epsilon ||
+        !param_.tol.within(_start.segment(0, 2), res.second.segment(0, 2)))
       break;
   }
   return res;

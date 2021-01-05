@@ -2,10 +2,10 @@ cmake_minimum_required(VERSION 3.6.0)
 project(dpose_core)
 
 set(CATKIN_PACKAGES costmap_2d geometry_msgs)
-add_compile_options(-Wpedantic -Wall -Wextra)
+# add_compile_options(-Wpedantic -Wall -Wextra)
 
 # the clang-tidy checks are optional
-set(CMAKE_CXX_CLANG_TIDY clang-tidy -checks=-*,clang-analyzer-cplusplus*,clang-diagnostic-*,clang-analyzer-*)
+# set(CMAKE_CXX_CLANG_TIDY clang-tidy -checks=-*,clang-analyzer-cplusplus*,clang-diagnostic-*,clang-analyzer-*)
 
 find_package(catkin REQUIRED COMPONENTS ${CATKIN_PACKAGES})
 find_package(Eigen3 REQUIRED)
@@ -45,3 +45,18 @@ install(TARGETS ${PROJECT_NAME}
 install(DIRECTORY src/${PROJECT_NAME}/
   DESTINATION ${CATKIN_PACKAGE_INCLUDE_DESTINATION}
 )
+
+#############
+## Testing ##
+#############
+
+if(CATKIN_ENABLE_TESTING)
+  find_package(rostest)
+  catkin_add_gtest(${PROJECT_NAME}_test
+    test/tolerance.cpp)
+
+  target_include_directories(${PROJECT_NAME}_test PUBLIC src)
+  if (TARGET ${PROJECT_NAME}_test)
+    target_link_libraries(${PROJECT_NAME}_test ${PROJECT_NAME} gtest_main)
+  endif()
+endif()

@@ -110,8 +110,6 @@ private:
  * std::cout << t.within({10, 12}, {11, 9}) << std::endl; // true
  * std::cout << t.within({10, 12}, {13, 9}) << std::endl; // false
  * @endcode
- *
- * todo test this class
  */
 struct tolerance {
   /// @brief diffent "modes"
@@ -207,8 +205,7 @@ struct gradient_decent {
   };
 
   gradient_decent() = default;
-  gradient_decent(const parameter& _param) noexcept;
-  gradient_decent(parameter&& _param) noexcept;
+  explicit gradient_decent(parameter&& _param) noexcept;
 
   std::pair<float, Eigen::Vector3d>
   solve(const pose_gradient& _pg, const Eigen::Vector3d& _start) const;

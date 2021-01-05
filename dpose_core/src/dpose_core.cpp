@@ -332,44 +332,6 @@ _init_data(const costmap_2d::Costmap2D& _cm, const polygon_msg& _footprint,
 
 }  // namespace internal
 
-// discrete_polygon
-// raytrace(const cell& _begin, const cell& _end) noexcept {
-//   // adjusted from ros - speed-up with eigen's magic
-//   const Eigen::Array2i delta_raw = _end - _begin;
-//   const cell delta = delta_raw.abs();
-
-//   // auxilary stuff
-//   cell::Index max_row, min_row;
-//   const int den = delta.maxCoeff(&max_row);
-//   const int add = delta.minCoeff(&min_row);
-//   const int size = den;
-//   int num = den / 2;
-
-//   // the minor is zero at max
-//   cell inc_minor = delta_raw.sign();
-//   cell inc_major = inc_minor;
-//   inc_minor[max_row] = 0;
-//   inc_major[min_row] = 0;
-
-//   // the running vars
-//   cell curr = _begin;
-//   discrete_polygon ray(2, size);
-
-//   // mind the smaller sign
-//   for (int ii = 0; ii < size; ++ii) {
-//     ray.col(ii) = curr;
-
-//     num += add;
-//     if (num >= den) {
-//       num -= den;
-//       curr += inc_minor;
-//     }
-//     curr += inc_major;
-//   }
-
-//   return ray;
-// }
-
 /**
  * @brief interval defined by [min, max].
  *

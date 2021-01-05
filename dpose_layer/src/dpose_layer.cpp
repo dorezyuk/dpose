@@ -63,7 +63,7 @@ DposeLayer::onInitialize() {
   param.step_t = 2;
   param.step_r = 0.1;
 
-  opt_ = gradient_decent(param);
+  opt_ = gradient_decent(std::move(param));
   ros::NodeHandle nh("~");
   d_pub_ = nh.advertise<PoseStamped>("derivative", 1);
 }

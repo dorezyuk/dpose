@@ -447,7 +447,6 @@ pose_gradient::get_cost(const Eigen::Vector3d& _se2) const {
           k_cell(1) >= data_.cost.rows)
         continue;
 
-      // todo get the index once
       sum += data_.cost.at<float>(k_cell(1), k_cell(0));
       derivative(0) += data_.d_x.at<float>(k_cell(1), k_cell(0));
       derivative(1) += data_.d_y.at<float>(k_cell(1), k_cell(0));

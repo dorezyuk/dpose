@@ -356,6 +356,15 @@ to_eigen(double _x, double _y, double _yaw) noexcept {
   return Eigen::Translation2d(_x, _y) * Eigen::Rotation2Dd(_yaw);
 }
 
+/// @brief checks if the _box is inside a rectangle starting at (0, 0) and
+/// ending at _max
+inline bool
+is_inside(const Eigen::Vector2d& _max,
+          const rectangle_type<double>& _box) noexcept {
+  return (_box.array() >= 0).all() && (_box.row(0).array() < _max(0)).all() &&
+         (_box.row(1).array() < _max(1)).all();
+}
+
 pose_gradient::pose_gradient(costmap_2d::Costmap2D& _cm,
                              const polygon_msg& _footprint,
                              const parameter& _param) :
@@ -383,26 +392,17 @@ pose_gradient::get_cost(const Eigen::Vector3d& _se2) const {
   const transform_type m_to_k = m_to_b * b_to_k;
 
   const rectangle_d k_kernel_bb = _to_rectangle(data_.cost).cast<double>();
-  const rectangle_d m_kernel_bb = m_to_k * k_kernel_bb;
+  const rectangle_d m_kernel_bb =
+      (m_to_k * k_kernel_bb).array().round().matrix();
 
-  // dirty rounding: we have to remove negative values, so we can cast to
-  // unsigned int below
-  rectangle_d cell_kernel_bb = m_kernel_bb.array().round().matrix();
-  const std::array<double, 2> cm_size{
-      static_cast<double>(cm_->getSizeInCellsX()),
-      static_cast<double>(cm_->getSizeInCellsY())};
-  // iterate over the rows
-  for (int rr = 0; rr != cell_kernel_bb.rows(); ++rr) {
-    // clamp everything between zero and map size
-    cell_kernel_bb.row(rr) =
-        cell_kernel_bb.row(rr).array().max(0).min(cm_size.at(rr)).matrix();
-  }
+  if (!is_inside({cm_->getSizeInCellsX(), cm_->getSizeInCellsY()}, m_kernel_bb))
+    return {0, Eigen::Vector3d(0, 0, 0)};
 
   // now we can convert the union_box to map coordinates
   cm_polygon sparse_outline, dense_outline;
-  sparse_outline.reserve(cell_kernel_bb.cols());
-  for (int cc = 0; cc != cell_kernel_bb.cols(); ++cc) {
-    const auto col = cell_kernel_bb.col(cc).cast<unsigned int>();
+  sparse_outline.reserve(m_kernel_bb.cols());
+  for (int cc = 0; cc != m_kernel_bb.cols(); ++cc) {
+    const auto col = m_kernel_bb.col(cc).cast<unsigned int>();
     sparse_outline.emplace_back(cm::MapLocation{col(0), col(1)});
   }
 
@@ -419,7 +419,6 @@ pose_gradient::get_cost(const Eigen::Vector3d& _se2) const {
   float sum = 0;
   Eigen::Vector3d derivative = Eigen::Vector3d::Zero();
   const transform_type k_to_m = m_to_k.inverse();
-  // todo if the kernel and the map don't overlap, we will have an error
   // iterate over all lines
   const auto char_map = cm_->getCharMap();
   for (const auto& line : lines) {

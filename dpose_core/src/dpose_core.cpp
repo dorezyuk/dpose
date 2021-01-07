@@ -333,6 +333,8 @@ _init_data(const costmap_2d::Costmap2D& _cm, const polygon_msg& _footprint,
 /// @param _end end of the ray (exclusive)
 std::vector<Eigen::Vector2i>
 _raytrace(const Eigen::Vector2i& _begin, const Eigen::Vector2i& _end) noexcept {
+  // original code under raytraceLine in
+  // https://github.com/ros-planning/navigation/blob/noetic-devel/costmap_2d/include/costmap_2d/costmap_2d.h
   const Eigen::Vector2i delta_raw = _end - _begin;
   const Eigen::Vector2i delta = delta_raw.array().abs();
 
@@ -458,10 +460,8 @@ pose_gradient::get_cost(const Eigen::Vector3d& _se2) const {
       (m_to_k * k_kernel_bb).array().round().matrix();
 
   // the kernel must be inside the costmap, otherwise we give up
-  if (!is_inside({cm_->getSizeInCellsX(), cm_->getSizeInCellsY()}, m_kernel_bb)){
-    ROS_WARN("outside of the map");
+  if (!is_inside({cm_->getSizeInCellsX(), cm_->getSizeInCellsY()}, m_kernel_bb))
     return {0, Eigen::Vector3d(0, 0, 0)};
-  }
 
   // convert the kernel to "lines"
   const cell_rays lines = _to_rays(m_kernel_bb.cast<int>());

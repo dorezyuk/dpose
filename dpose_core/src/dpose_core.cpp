@@ -328,10 +328,57 @@ _init_data(const costmap_2d::Costmap2D& _cm, const polygon_msg& _footprint,
 
 }  // namespace internal
 
+/// @brief bresenhams raytrace algorithm adjusted from ros
+/// @param _begin begin of the ray
+/// @param _end end of the ray (exclusive)
+std::vector<Eigen::Vector2i>
+_raytrace(const Eigen::Vector2i& _begin, const Eigen::Vector2i& _end) noexcept {
+  const Eigen::Vector2i delta_raw = _end - _begin;
+  const Eigen::Vector2i delta = delta_raw.array().abs();
+
+  Eigen::Vector2i::Index row_major, row_minor;
+  const auto den = delta.maxCoeff(&row_major);
+  const auto add = delta.minCoeff(&row_minor);
+
+  const auto size = den;
+
+  assert(size >= 0 && "negative size detected");
+
+  int num = den / 2;
+
+  // setup the increments
+  Eigen::Vector2i inc_minor = delta_raw.array().sign();
+  Eigen::Vector2i inc_major = inc_minor;
+
+  // erase the "other" row
+  inc_minor(row_major) = 0;
+  inc_major(row_minor) = 0;
+
+  // allocate space beforehand
+  std::vector<Eigen::Vector2i> ray(size);
+  Eigen::Vector2i curr = _begin;
+
+  // bresenham's iteration
+  for (int ii = 0; ii < size; ++ii) {
+    ray.at(ii) = curr;
+
+    num += add;
+    if (num >= den) {
+      num -= den;
+      curr += inc_minor;
+    }
+    curr += inc_major;
+  }
+
+  return ray;
+}
+
 /**
  * @brief interval defined by [min, max].
  *
  * Use interval::extend in order to add values.
+ * We will use this structure in order to iterate on a ray defined by
+ * its y-value and x_begin and x_end.
  */
 template <typename _T>
 struct interval {
@@ -349,6 +396,21 @@ struct interval {
 };
 
 using cell_interval = interval<size_t>;
+using cell_rays = std::unordered_map<int, cell_interval>;
+
+/// @brief constructs intervals [x_begin, x_end] for every y value from _rect
+/// @param _rect the rectangle
+cell_rays
+_to_rays(const rectangle_type<int>& _rect) noexcept {
+  cell_rays out;
+  for (int cc = 0; cc != 4; ++cc) {
+    const auto ray = _raytrace(_rect.col(cc), _rect.col(cc + 1));
+    for (const auto& cell : ray)
+      out[cell.y()].extend(cell.x());
+  }
+  return out;
+}
+
 using transform_type = Eigen::Isometry2d;
 
 inline transform_type
@@ -395,26 +457,14 @@ pose_gradient::get_cost(const Eigen::Vector3d& _se2) const {
   const rectangle_d m_kernel_bb =
       (m_to_k * k_kernel_bb).array().round().matrix();
 
-  if (!is_inside({cm_->getSizeInCellsX(), cm_->getSizeInCellsY()}, m_kernel_bb))
+  // the kernel must be inside the costmap, otherwise we give up
+  if (!is_inside({cm_->getSizeInCellsX(), cm_->getSizeInCellsY()}, m_kernel_bb)){
+    ROS_WARN("outside of the map");
     return {0, Eigen::Vector3d(0, 0, 0)};
-
-  // now we can convert the union_box to map coordinates
-  cm_polygon sparse_outline, dense_outline;
-  sparse_outline.reserve(m_kernel_bb.cols());
-  for (int cc = 0; cc != m_kernel_bb.cols(); ++cc) {
-    const auto col = m_kernel_bb.col(cc).cast<unsigned int>();
-    sparse_outline.emplace_back(cm::MapLocation{col(0), col(1)});
   }
 
-  // get the cells of the dense outline
-  // todo check if i can replace this with something faster
-  cm_->polygonOutlineCells(sparse_outline, dense_outline);
-
-  // convert the cells into line-intervals
-  std::unordered_map<size_t, cell_interval> lines;
-
-  for (const auto& cell : dense_outline)
-    lines[cell.y].extend(cell.x);
+  // convert the kernel to "lines"
+  const cell_rays lines = _to_rays(m_kernel_bb.cast<int>());
 
   float sum = 0;
   Eigen::Vector3d derivative = Eigen::Vector3d::Zero();

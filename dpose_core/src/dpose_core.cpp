@@ -335,10 +335,11 @@ std::vector<Eigen::Vector2i>
 _raytrace(const Eigen::Vector2i& _begin, const Eigen::Vector2i& _end) noexcept {
   // original code under raytraceLine in
   // https://github.com/ros-planning/navigation/blob/noetic-devel/costmap_2d/include/costmap_2d/costmap_2d.h
-  const Eigen::Vector2i delta_raw = _end - _begin;
-  const Eigen::Vector2i delta = delta_raw.array().abs();
+  using pose = Eigen::Vector2i;
+  const pose delta_raw = _end - _begin;
+  const pose delta = delta_raw.array().abs();
 
-  Eigen::Vector2i::Index row_major, row_minor;
+  pose::Index row_major, row_minor;
   const auto den = delta.maxCoeff(&row_major);
   const auto add = delta.minCoeff(&row_minor);
 
@@ -349,16 +350,16 @@ _raytrace(const Eigen::Vector2i& _begin, const Eigen::Vector2i& _end) noexcept {
   int num = den / 2;
 
   // setup the increments
-  Eigen::Vector2i inc_minor = delta_raw.array().sign();
-  Eigen::Vector2i inc_major = inc_minor;
+  pose inc_minor = delta_raw.array().sign();
+  pose inc_major = inc_minor;
 
   // erase the "other" row
   inc_minor(row_major) = 0;
   inc_major(row_minor) = 0;
 
   // allocate space beforehand
-  std::vector<Eigen::Vector2i> ray(size);
-  Eigen::Vector2i curr = _begin;
+  std::vector<pose> ray(size);
+  pose curr = _begin;
 
   // bresenham's iteration
   for (int ii = 0; ii < size; ++ii) {
@@ -507,23 +508,39 @@ pose_gradient::get_cost(const Eigen::Vector3d& _se2) const {
   return {sum, m_derivative};
 }
 
+tolerance::angle_tolerance::angle_tolerance(double _tol) :
+    tol_(angles::normalize_angle_positive(_tol)) {}
+
 tolerance::sphere_tolerance::sphere_tolerance(double _rad) :
-    rad_(std::abs(_rad)) {}
+    radius_(std::abs(_rad)) {}
 
 tolerance::box_tolerance::box_tolerance(const pose& _box) :
     box_(_box.array().abs().matrix()) {}
 
 tolerance::box_tolerance::box_tolerance(double _size) :
-    box_tolerance(pose(_size, _size)) {}
+    box_tolerance(pose(_size, _size, _size)) {}
 
-tolerance::tolerance() : impl_(new none_tolerance()) {}
-
-tolerance::tolerance(const mode& _m, const Eigen::Vector2d& _center) {
-  // our "dispatcher". use the compiler assert that all cases are covered
+tolerance::tolerance_ptr
+tolerance::factory(const mode& _m, const pose& _p) noexcept {
   switch (_m) {
-    case mode::NONE: impl_.reset(new none_tolerance()); break;
-    case mode::SPHERE: impl_.reset(new sphere_tolerance(_center.norm())); break;
-    case mode::BOX: impl_.reset(new box_tolerance(_center)); break;
+    case mode::NONE: return nullptr;
+    case mode::ANGLE: return tolerance_ptr{new angle_tolerance(_p.z())};
+    case mode::SPHERE: return tolerance_ptr{new sphere_tolerance(_p.norm())};
+    case mode::BOX: return tolerance_ptr{new box_tolerance(_p)};
+  }
+  assert(false && "reached switch-case end");
+  return nullptr;
+}
+
+tolerance::tolerance(const mode& _m, const pose& _center) {
+  if (_m != mode::NONE)
+    impl_.emplace_back(factory(_m, _center));
+}
+
+tolerance::tolerance(std::initializer_list<std::pair<mode, pose>> _list) {
+  for (const auto& pair : _list) {
+    if (pair.first != mode::NONE)
+      impl_.emplace_back(factory(pair.first, pair.second));
   }
 }
 
@@ -550,8 +567,7 @@ gradient_decent::solve(const pose_gradient& _pg,
     // the "gradient decent"
     res.second += d.second;
     res.first = d.first;
-    if (res.first <= param_.epsilon ||
-        !param_.tol.within(_start.segment(0, 2), res.second.segment(0, 2)))
+    if (res.first <= param_.epsilon || !param_.tol.within(_start, res.second))
       break;
   }
   return res;

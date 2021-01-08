@@ -1,6 +1,7 @@
 #ifndef DPOSE_CORE__DPOSE_CORE__HPP
 #define DPOSE_CORE__DPOSE_CORE__HPP
 
+#include <angles/angles.h>
 #include <costmap_2d/costmap_2d.h>
 #include <costmap_2d/layered_costmap.h>
 #include <geometry_msgs/Point.h>
@@ -71,6 +72,7 @@ using polygon_msg = std::vector<geometry_msgs::Point>;
  * gradient-decent solver below.
  *
  * The output is in the global frame.
+ * The input (and output) is in cell-domain (not metric).
  */
 struct pose_gradient {
   using parameter = internal::parameter;
@@ -110,12 +112,13 @@ private:
  * std::cout << t.within({10, 12}, {11, 9}) << std::endl; // true
  * std::cout << t.within({10, 12}, {13, 9}) << std::endl; // false
  * @endcode
+ *
  */
 struct tolerance {
   /// @brief diffent "modes"
-  enum class mode { NONE, SPHERE, BOX };
+  enum class mode { NONE, ANGLE, SPHERE, BOX };
 
-  using pose = Eigen::Vector2d;
+  using pose = Eigen::Vector3d;
 
   /**
    * @brief noop-tolerance.
@@ -134,10 +137,28 @@ struct tolerance {
   };
 
   /**
+   * @brief angle_tolerance
+   *
+   * interprets the last value of pose as a angle (in rads) and checks if the
+   * angular distance from _a to _b is within the tolerance.
+   */
+  struct angle_tolerance : public none_tolerance {
+    explicit angle_tolerance(double _tol);
+
+    inline bool
+    within(const pose& _a, const pose& _b) const noexcept {
+      return std::abs(angles::shortest_angular_distance(_a.z(), _b.z())) < tol_;
+    }
+
+  private:
+    double tol_;  ///< tolerance in radians
+  };
+
+  /**
    * @brief tolerance on a sphere
    *
    * The point _a is within the tolerance to _b, if their normed difference is
-   * below the rad_ parameter.
+   * below the radius_ parameter.
    *
    * @note: _rad will be redrived as pose.norm() from the tolerance::tolerance
    * call.
@@ -147,11 +168,11 @@ struct tolerance {
 
     inline bool
     within(const pose& _a, const pose& _b) const noexcept final {
-      return (_a - _b).norm() <= rad_;
+      return (_a - _b).norm() <= radius_;
     }
 
   private:
-    double rad_;  ///< radius
+    double radius_;  ///< radius
   };
 
   /**
@@ -173,16 +194,25 @@ struct tolerance {
     pose box_;  ///< half size of the box
   };
 
-  tolerance();
+private:
+  using tolerance_ptr = std::unique_ptr<none_tolerance>;
+  std::vector<tolerance_ptr> impl_;
+
+  static tolerance_ptr
+  factory(const mode& _m, const pose& _center) noexcept;
+
+public:
+  tolerance() = default;
   tolerance(const mode& _m, const pose& _center);
+  tolerance(std::initializer_list<std::pair<mode, pose>> _list);
 
   inline bool
   within(const pose& _a, const pose& _b) const noexcept {
-    return impl_->within(_a, _b);
+    // check all tolerances defined
+    return std::all_of(
+        impl_.begin(), impl_.end(),
+        [&](const tolerance_ptr& _impl) { return _impl->within(_a, _b); });
   }
-
-private:
-  std::unique_ptr<none_tolerance> impl_;
 };
 
 /**

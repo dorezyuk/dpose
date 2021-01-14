@@ -204,7 +204,13 @@ private:
 public:
   tolerance() = default;
   tolerance(const mode& _m, const pose& _center);
-  tolerance(std::initializer_list<std::pair<mode, pose>> _list);
+
+  // define the list-type. for now we dont want to use the
+  // std::initializer_list, since we want to be able to dynamically allocate the
+  // list.
+  using pair_type = std::pair<mode, pose>;
+  using list_type = std::vector<pair_type>;
+  tolerance(const list_type& _list);
 
   inline bool
   within(const pose& _a, const pose& _b) const noexcept {

@@ -12,6 +12,8 @@
 
   <depend>gpp_interface</depend>
   <depend>dpose_core</depend>
+  <depend>pluginlib</depend>
+  <depend>xmlrpcpp</depend>
 
   <test_depend>rostest</test_depend>
 

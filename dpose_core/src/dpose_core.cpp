@@ -537,7 +537,7 @@ tolerance::tolerance(const mode& _m, const pose& _center) {
     impl_.emplace_back(factory(_m, _center));
 }
 
-tolerance::tolerance(std::initializer_list<std::pair<mode, pose>> _list) {
+tolerance::tolerance(const list_type& _list) {
   for (const auto& pair : _list) {
     if (pair.first != mode::NONE)
       impl_.emplace_back(factory(pair.first, pair.second));

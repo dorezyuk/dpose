@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.6.0)
 project(dpose_goal_tolerance)
 
-set(CATKIN_PACKAGES dpose_core gpp_interface)
+set(CATKIN_PACKAGES dpose_core gpp_interface pluginlib xmlrpcpp)
 # add_compile_options(-Wpedantic -Wall -Wextra)
 
 # the clang-tidy checks are optional

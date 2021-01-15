@@ -7,6 +7,15 @@
 
 namespace dpose_goal_tolerance {
 
+/**
+ * @brief Class implements a goal-tolerance-functionality for global-planners.
+ * 
+ * Add this to the pre_planning group of your GppPlugin in order to use it.
+ * The class will **only** change the _goal (_start will remain unchanged).
+ * You can define a list of tolerance types on the parameter server.
+ * 
+ * See the README.md for more details.
+ */
 struct DposeGoalTolerance : public gpp_interface::PrePlanningInterface {
   bool
   preProcess(Pose& _start, Pose& _goal) override;

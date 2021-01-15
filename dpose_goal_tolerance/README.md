@@ -1,7 +1,8 @@
 # DposeGoalTolerance
 
-The library allows you to extend you nav_core::GlobalPlanner with a tolerance feature.
-It implements the gpp_interface::PrePlanningInterface, so in order to use it, you will need the gpp_plugin::GppPlugin.
+The library allows you to extend your nav_core::GlobalPlanner with a tolerance feature.
+It implements the gpp_interface::PrePlanningInterface.
+In order to use it, you will need the gpp_plugin::GppPlugin.
 
 ## Build and Install
 

@@ -31,7 +31,7 @@ using dpose_core::tolerance;
 using XmlRpc::XmlRpcException;
 using XmlRpc::XmlRpcValue;
 
-/// @brief returns a  value from _v under _tag.
+/// @brief returns a value from _v under _tag or the _default value.
 /// @param _v data-storage
 /// @param _tag the tag under which the data is saved
 /// @param _default the default value
@@ -40,7 +40,7 @@ template <typename _T>
 _T
 _getElement(const XmlRpcValue& _v, const std::string& _tag,
             const _T& _default) noexcept {
-  // check if the tag is defined (see above for explanation)
+  // check if the tag is defined
   if (!_v.hasMember(_tag))
     return _default;
 
@@ -55,7 +55,7 @@ _getElement(const XmlRpcValue& _v, const std::string& _tag,
 
 /// @brief returns a pose from the element _v.
 /// _v can have the form {"x": a, "y": b, "z": c}.
-/// missing value will be replaced with 0
+/// missing values will be replaced with 0
 inline tolerance::pose
 _getPose(const XmlRpcValue& _v) noexcept {
   return {_getElement(_v, "x", 0.), _getElement(_v, "y", 0.),
@@ -83,22 +83,20 @@ _loadTolerance(const std::string& _name, ros::NodeHandle& _nh) {
 
   // load the data from the param server.
   // if the user does not provide anything, we don't have any tolerance defined
-  if (!_nh.getParam(_name, raw)) {
-    ROS_INFO_STREAM("no parameter " << _nh.getNamespace() << "/" << _name);
+  if (!_nh.getParam(_name, raw))
     return {};
-  }
 
   // the tolerances must be defined as an array
   if (raw.getType() != XmlRpcValue::TypeArray) {
-    ROS_WARN_STREAM("invalid type for " << _name);
+    DP_WARN_LOG(_name << " is not an array");
     return {};
   }
 
   // allocate space.
   tolerance::list_type impl;
-  impl.resize(raw.size());
+  impl.reserve(raw.size());
 
-  // iterate over the raw-array
+  // iterate over the array
   for (int ii = 0; ii != raw.size(); ++ii) {
     // short-cut access to the current element
     const auto& element = raw[ii];
@@ -118,7 +116,7 @@ _loadTolerance(const std::string& _name, ros::NodeHandle& _nh) {
       impl.emplace_back(tolerance::mode::BOX, pose);
     }
     else {
-      ROS_INFO_STREAM("ignoring the tag \"" << tag << "\"");
+      DP_INFO_LOG("ignoring the tag \"" << tag << "\"");
     }
   }
   return {impl};
@@ -139,7 +137,7 @@ _to_eigen(const PoseStamped& _msg) noexcept {
   return out;
 }
 
-/// @brief converts Eigen::Vector3d into PoseStamped with the given _frame
+/// @brief converts Eigen::Vector3d to PoseStamped with the given _frame
 PoseStamped
 _to_msg(const Vector3d& _se2, const std::string& _frame) noexcept {
   PoseStamped out;
@@ -161,7 +159,7 @@ _to_cells(const Vector3d& _metric, const Costmap2D& _map) noexcept {
   return (_metric - origin) * inv_res;
 }
 
-/// @brief converts cell to metric outputt using the _map's parameters
+/// @brief converts cell to metric output using the _map's parameters
 Vector3d
 _to_metric(const Vector3d& _cell, const Costmap2D& _map) noexcept {
   const Vector3d origin(_map.getOriginX(), _map.getOriginY(), 0);
@@ -176,17 +174,17 @@ DposeGoalTolerance::preProcess(Pose& _start, Pose& _goal) {
   // we will only have a valid costmap ptr, if DposeGoalTolerance::initialize
   // was called successfully.
   if (!map_) {
-    DP_WARN_LOG("class not initialized");
+    DP_WARN_LOG("not initialized");
     return false;
   }
 
-  // check if the _goal is in the same frame as the global costmap.
+  // check if the _goal is in the same frame as the costmap.
   if (_goal.header.frame_id != map_->getGlobalFrameID()) {
     DP_WARN_LOG("unknown frame_id: " << _goal.header.frame_id);
     return false;
   }
 
-  // convert the metric input to cells - that what we need for the
+  // convert the metric input to cells - that's what we need for the
   // gradient_decent::solve call.
   const auto& map = *map_->getCostmap();
   const Vector3d metric_se2 = _to_eigen(_goal);
@@ -211,7 +209,7 @@ void
 DposeGoalTolerance::initialize(const std::string& _name, Map* _map) {
   // we cannot do anything if the costmap is invalid
   if (!_map) {
-    ROS_FATAL_STREAM("DposeGoalTolerance received a nullptr as map");
+    DP_FATAL_LOG("received a nullptr as map");
     return;
   }
 
@@ -219,13 +217,12 @@ DposeGoalTolerance::initialize(const std::string& _name, Map* _map) {
   ros::NodeHandle pnh("~" + _name);
 
   {
-    // scope the stuff since we have different parameters
+    // scope since we have different parameters
     // here we take care of the pose_gradient setup
     dpose_core::pose_gradient::parameter param;
 
     // get the padding for the footprint.
-    // the padding is unsigned so we max it with zero to prevent implicit
-    // casting.
+    // the padding is unsigned so we take here the abs
     param.padding = std::abs(pnh.param("padding", 2));
 
     // setup the pose-gradient

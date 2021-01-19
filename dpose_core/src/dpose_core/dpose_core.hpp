@@ -151,7 +151,8 @@ using polygon_msg = std::vector<geometry_msgs::Point>;
  * dpose_core::pose_gradient pg(my_costmap, my_footprint);
  *
  * // get the gradient for a pose
- * const auto res = pg.get_cost(my_pose);
+ * Eigen::Vector3f grad;
+ * const auto res = pg.get_cost(my_pose, grad, nullptr);
  * @endcode
  *
  * You can use this class for your own optimization, or reuse the
@@ -173,6 +174,11 @@ struct pose_gradient {
                 const parameter& _param);
   pose_gradient(costmap_2d::LayeredCostmap& _lcm, const parameter& _param);
 
+  /// @brief returns the cost for the given se2 pose
+  /// @param[in] _se2 pose of interest. should be in the global frame of the
+  /// costmap.
+  /// @param[out] _J optional jacobian. will be ignored if nullptr
+  /// @param[out] _H optional hessian. will be ignored if nullptr
   float
   get_cost(const pose& _se2, jacobian* _J, hessian* _H) const;
 
@@ -318,11 +324,11 @@ public:
 struct gradient_decent {
   /// @brief parameter for the optimization
   struct parameter {
-    size_t iter = 10;      ///< maximal number of steps
+    size_t iter = 10;     ///< maximal number of steps
     float step_t = 1;     ///< maximal step size for translation (in cells)
     float step_r = 0.1;   ///< maximal step size for rotation (in rads)
     float epsilon = 0.1;  ///< cost-threshold for termination
-    tolerance tol;         ///< maximal distance from _start
+    tolerance tol;        ///< maximal distance from _start
   };
 
   gradient_decent() = default;

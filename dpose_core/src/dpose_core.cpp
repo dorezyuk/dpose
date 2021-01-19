@@ -1,3 +1,27 @@
+/*
+ * MIT License
+ *
+ * Copyright (c) 2021 Dima Dorezyuk
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+ */
+
 #include <dpose_core/dpose_core.hpp>
 
 #include <opencv2/imgproc.hpp>
@@ -274,6 +298,60 @@ _angular_derivative(cv::InputArray _image,
   return output;
 }
 
+/// @brief will generate the jacobian data based on the cost_data
+jacobian_data
+_init_jacobian(const cost_data& _data) {
+  jacobian_data J;
+  // get our three derivatives
+  cv::Sobel(_data.cost, J.d_x, cv::DataType<float>::type, 1, 0, 3);
+  cv::Sobel(_data.cost, J.d_y, cv::DataType<float>::type, 0, 1, 3);
+  J.d_z = _angular_derivative(_data.cost, _data.center);
+
+  // safe the jacobians if compiled in debug mode
+  assert(cv::imwrite("/tmp/d_x.jpg", J.d_x * 10 + 100));
+  assert(cv::imwrite("/tmp/d_y.jpg", J.d_y * 10 + 100));
+  assert(cv::imwrite("/tmp/d_theta.jpg", J.d_z * 10 + 100));
+
+  return J;
+}
+
+/// @brief will generate the hessian data based on the jacobian data
+hessian_data
+_init_hessian(const jacobian_data& _J, const Eigen::Vector2i& _center) {
+  hessian_data H;
+  // second derivative to x
+  cv::Sobel(H.d_x_x, _J.d_x, cv::DataType<float>::type, 1, 0, 3);
+  cv::Sobel(H.d_y_x, _J.d_y, cv::DataType<float>::type, 1, 0, 3);
+  cv::Sobel(H.d_z_x, _J.d_z, cv::DataType<float>::type, 1, 0, 3);
+
+  // safe the hessians if compiled in debug mode
+  assert(cv::imwrite("/tmp/d_x_x.jpg", H.d_x_x * 10 + 100));
+  assert(cv::imwrite("/tmp/d_x_y.jpg", H.d_x_y * 10 + 100));
+  assert(cv::imwrite("/tmp/d_x_theta.jpg", H.d_x_z * 10 + 100));
+
+  // second derivative to y
+  cv::Sobel(H.d_x_y, _J.d_x, cv::DataType<float>::type, 0, 1, 3);
+  cv::Sobel(H.d_y_y, _J.d_y, cv::DataType<float>::type, 0, 1, 3);
+  cv::Sobel(H.d_z_y, _J.d_z, cv::DataType<float>::type, 0, 1, 3);
+
+  // safe the hessians if compiled in debug mode
+  assert(cv::imwrite("/tmp/d_y_x.jpg", H.d_y_x * 10 + 100));
+  assert(cv::imwrite("/tmp/d_y_y.jpg", H.d_y_y * 10 + 100));
+  assert(cv::imwrite("/tmp/d_y_theta.jpg", H.d_y_z * 10 + 100));
+
+  // second derivative to theta
+  H.d_x_z = _angular_derivative(_J.d_x, _center);
+  H.d_y_z = _angular_derivative(_J.d_y, _center);
+  H.d_z_z = _angular_derivative(_J.d_z, _center);
+
+  // safe the hessians if compiled in debug mode
+  assert(cv::imwrite("/tmp/d_theta_x.jpg", H.d_z_x * 10 + 100));
+  assert(cv::imwrite("/tmp/d_theta_y.jpg", H.d_z_y * 10 + 100));
+  assert(cv::imwrite("/tmp/d_theta_theta.jpg", H.d_z_z * 10 + 100));
+
+  return H;
+}
+
 // function is exposed to the user
 data
 init_data(const polygon& _footprint, const parameter& _param) {
@@ -285,26 +363,25 @@ init_data(const polygon& _footprint, const parameter& _param) {
 
   // get the center
   const Eigen::Vector2i padding(_param.padding, _param.padding);
-  out.center = padding - _footprint.rowwise().minCoeff();
+  out.core.center = padding - _footprint.rowwise().minCoeff();
 
   // shift everything by the center, so we just have positive values
-  polygon footprint = _footprint.colwise() + out.center;
+  polygon footprint = _footprint.colwise() + out.core.center;
   assert(footprint.array().minCoeff() == static_cast<int>(_param.padding) &&
          "footprint shifting failed");
 
   // get the cost image
-  out.cost = _get_cost(footprint, _param);
-
-  // get our three derivatives
-  cv::Sobel(out.cost, out.d_x, cv::DataType<float>::type, 1, 0, 3);
-  cv::Sobel(out.cost, out.d_y, cv::DataType<float>::type, 0, 1, 3);
-  out.d_theta = _angular_derivative(out.cost, out.center);
-
+  out.core.cost = _get_cost(footprint, _param);
   // safe the image if we are running in debug mode (and scale the images)
   assert(cv::imwrite("/tmp/cost.jpg", out.cost * 10));
-  assert(cv::imwrite("/tmp/d_x.jpg", out.d_x * 10 + 100));
-  assert(cv::imwrite("/tmp/d_y.jpg", out.d_y * 10 + 100));
-  assert(cv::imwrite("/tmp/d_theta.jpg", out.d_theta * 10 + 100));
+
+  // get the derivatives
+  out.J = _init_jacobian(out.core);
+
+  // the hessian data might be optional
+  if (_param.generate_hessian)
+    out.H = _init_hessian(out.J, out.core.center);
+
   return out;
 }
 
@@ -328,7 +405,7 @@ _init_data(const costmap_2d::Costmap2D& _cm, const polygon_msg& _footprint,
 
 }  // namespace internal
 
-/// @brief bresenhams raytrace algorithm adjusted from ros
+/// @brief bresenham's raytrace algorithm adjusted from ros
 /// @param _begin begin of the ray
 /// @param _end end of the ray (exclusive)
 std::vector<Eigen::Vector2i>
@@ -414,18 +491,18 @@ _to_rays(const rectangle_type<int>& _rect) noexcept {
   return out;
 }
 
-using transform_type = Eigen::Isometry2d;
+using transform_type = Eigen::Isometry2f;
 
 inline transform_type
-to_eigen(double _x, double _y, double _yaw) noexcept {
-  return Eigen::Translation2d(_x, _y) * Eigen::Rotation2Dd(_yaw);
+to_eigen(float _x, float _y, float _yaw) noexcept {
+  return Eigen::Translation2f(_x, _y) * Eigen::Rotation2Df(_yaw);
 }
 
 /// @brief checks if the _box is inside a rectangle starting at (0, 0) and
 /// ending at _max
 inline bool
-is_inside(const Eigen::Vector2d& _max,
-          const rectangle_type<double>& _box) noexcept {
+is_inside(const Eigen::Vector2f& _max,
+          const rectangle_type<float>& _box) noexcept {
   return (_box.array() >= 0).all() && (_box.row(0).array() < _max(0)).all() &&
          (_box.row(1).array() < _max(1)).all();
 }
@@ -439,9 +516,9 @@ pose_gradient::pose_gradient(costmap_2d::LayeredCostmap& _lcm,
                              const parameter& _param) :
     pose_gradient(*_lcm.getCostmap(), _lcm.getFootprint(), _param) {}
 
-std::pair<float, Eigen::Vector3d>
-pose_gradient::get_cost(const Eigen::Vector3d& _se2) const {
-  using rectangle_d = rectangle_type<double>;
+float
+pose_gradient::get_cost(const pose& _se2, jacobian* _J, hessian* _H) const {
+  using rectangle_f = rectangle_type<float>;
   using cm_polygon = std::vector<costmap_2d::MapLocation>;
   using namespace internal;
 
@@ -453,22 +530,28 @@ pose_gradient::get_cost(const Eigen::Vector3d& _se2) const {
   // get the transform from map (m) to kernel (k)
   const transform_type m_to_b = to_eigen(_se2.x(), _se2.y(), _se2.z());
   const transform_type b_to_k =
-      to_eigen(-data_.center.x(), -data_.center.y(), 0);
+      to_eigen(-data_.core.center.x(), -data_.core.center.y(), 0);
   const transform_type m_to_k = m_to_b * b_to_k;
 
-  const rectangle_d k_kernel_bb = _to_rectangle(data_.cost).cast<double>();
-  const rectangle_d m_kernel_bb =
+  const rectangle_f k_kernel_bb = _to_rectangle(data_.core.cost).cast<float>();
+  const rectangle_f m_kernel_bb =
       (m_to_k * k_kernel_bb).array().round().matrix();
 
+  float sum = 0;
   // the kernel must be inside the costmap, otherwise we give up
   if (!is_inside({cm_->getSizeInCellsX(), cm_->getSizeInCellsY()}, m_kernel_bb))
-    return {0, Eigen::Vector3d(0, 0, 0)};
+    return sum;
 
   // convert the kernel to "lines"
   const cell_rays lines = _to_rays(m_kernel_bb.cast<int>());
 
-  float sum = 0;
-  Eigen::Vector3d derivative = Eigen::Vector3d::Zero();
+  // init the output values
+  if (_J)
+    *_J = jacobian::Zero();
+
+  if (_H)
+    *_H = hessian::Zero();
+
   const transform_type k_to_m = m_to_k.inverse();
   // iterate over all lines
   const auto char_map = cm_->getCharMap();
@@ -484,28 +567,39 @@ pose_gradient::get_cost(const Eigen::Vector3d& _se2) const {
         continue;
 
       // convert to the kernel frame
-      const Eigen::Vector2d m_cell(x, line.first);
+      const Eigen::Vector2f m_cell(x, line.first);
       const Eigen::Vector2i k_cell =
           (k_to_m * m_cell).array().round().cast<int>().matrix();
 
       // check if k_cell is valid
-      if ((k_cell.array() < 0).any() || k_cell(0) >= data_.cost.cols ||
-          k_cell(1) >= data_.cost.rows)
+      if ((k_cell.array() < 0).any() || k_cell(0) >= data_.core.cost.cols ||
+          k_cell(1) >= data_.core.cost.rows)
         continue;
 
-      sum += data_.cost.at<float>(k_cell(1), k_cell(0));
-      derivative(0) += data_.d_x.at<float>(k_cell(1), k_cell(0));
-      derivative(1) += data_.d_y.at<float>(k_cell(1), k_cell(0));
-      derivative(2) += data_.d_theta.at<float>(k_cell(1), k_cell(0));
+      // update our outputs
+      sum += data_.core.cost.at<float>(k_cell(1), k_cell(0));
+
+      // J and H are optional
+      if (_J)
+        *_J += data_.J.get(k_cell(1), k_cell(0));
+
+      if (_H)
+        *_H += data_.H.get(k_cell(1), k_cell(0));
     }
   }
 
   // flip the derivate back to the original frame.
   // note: we don't do this for the "theta"-part
-  Eigen::Vector3d m_derivative;
-  m_derivative.segment(0, 2) = m_to_k.rotation() * derivative.segment(0, 2);
-  m_derivative(2) = derivative(2);
-  return {sum, m_derivative};
+  Eigen::Matrix3f rot = m_to_k.matrix();
+  rot(0, 2) = 0;
+  rot(1, 2) = 0;
+  if (_J)
+    *_J = rot * *_J;
+
+  if (_H)
+    *_H = rot * *_H;
+
+  return sum;
 }
 
 tolerance::angle_tolerance::angle_tolerance(double _tol) :
@@ -547,26 +641,26 @@ tolerance::tolerance(std::initializer_list<std::pair<mode, pose>> _list) {
 gradient_decent::gradient_decent(parameter&& _param) noexcept :
     param_(std::move(_param)) {}
 
-std::pair<float, Eigen::Vector3d>
+std::pair<float, Eigen::Vector3f>
 gradient_decent::solve(const pose_gradient& _pg,
-                       const Eigen::Vector3d& _start) const {
+                       const Eigen::Vector3f& _start) const {
   // super simple gradient decent algorithm with a limit on the max step
   // for now we set it to 1 cell size.
-  std::pair<float, Eigen::Vector3d> res{0.0F, _start};
+  std::pair<float, Eigen::Vector3f> res{0.0F, _start};
+  Eigen::Vector3f J;
   for (size_t ii = 0; ii != param_.iter; ++ii) {
     // get the derivative (d)
-    auto d = _pg.get_cost(res.second);
+    res.first = _pg.get_cost(res.second, &J, nullptr);
 
     // scale the vector such that its norm is at most the _param.step
     // (the scaling is done seperately for translation (t) and rotation (r))
-    const auto norm_t = std::max(d.second.segment(0, 2).norm(), param_.step_t);
-    const auto norm_r = std::max(std::abs(d.second(2)), param_.step_r);
-    d.second.segment(0, 2) *= (param_.step_t / norm_t);
-    d.second(2) *= (param_.step_r / norm_r);
+    const auto norm_t = std::max(J.segment(0, 2).norm(), param_.step_t);
+    const auto norm_r = std::max(std::abs(J(2)), param_.step_r);
+    J.segment(0, 2) *= (param_.step_t / norm_t);
+    J(2) *= (param_.step_r / norm_r);
 
     // the "gradient decent"
-    res.second += d.second;
-    res.first = d.first;
+    res.second += J;
     if (res.first <= param_.epsilon || !param_.tol.within(_start, res.second))
       break;
   }

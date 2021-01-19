@@ -1,3 +1,27 @@
+/*
+ * MIT License
+ *
+ * Copyright (c) 2021 Dima Dorezyuk
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+ */
+
 #ifndef DPOSE_CORE__DPOSE_CORE__HPP
 #define DPOSE_CORE__DPOSE_CORE__HPP
 
@@ -17,19 +41,81 @@
 namespace dpose_core {
 namespace internal {
 
+/// @brief struct holding the "core" data - just cost matrix and center cell
+struct cost_data {
+  cv::Mat cost;            ///< cost matrix
+  Eigen::Vector2i center;  ///< center cell
+};
+
+/// @brief struct holding the data required for the jacobians
+/// Use jacobian_data::get to get the jacobian for a pixel.
+struct jacobian_data {
+  /*
+   * the jacobian has the form
+   * [x, y, z]^T
+   */
+  using jacobian = Eigen::Vector3f;
+
+  /// @brief returns the jacobian for given x and y.
+  inline jacobian
+  get(int _y, int _x) const {
+    // clang-format off
+    return {d_x.at<float>(_y, _x), 
+            d_y.at<float>(_y, _x),
+            d_z.at<float>(_y, _x)};
+    // clang-format on
+  }
+
+  cv::Mat d_x;  ///< derivative of the cost in x
+  cv::Mat d_y;  ///< derivative of the cost in y
+  cv::Mat d_z;  ///< derivative of the cost in z (theta)
+};
+
+/// @brief struct holding the data required for the hessians
+/// Use hessian_data::get to get the hessian for a pixel
+struct hessian_data {
+  /*
+   * the hessian has the form
+   * [[x_x, x_y, x_z],
+   *  [y_x, y_y, y_z],
+   *  [z_x, z_y, z_z]]
+   */
+  using hessian = Eigen::Matrix3f;
+
+  /// @brief returns the hessian for given x and y.
+  inline hessian
+  get(int _y, int _x) const {
+    hessian H;
+    // clang-format off
+    H << d_x_x.at<float>(_y, _x), d_x_y.at<float>(_y, _x), d_x_z.at<float>(_y, _x),
+         d_y_x.at<float>(_y, _x), d_y_y.at<float>(_y, _x), d_y_z.at<float>(_y, _x),
+         d_z_x.at<float>(_y, _x), d_z_y.at<float>(_y, _x), d_z_z.at<float>(_y, _x);
+    // clang-format on
+    return H;
+  }
+
+  cv::Mat d_x_x;  ///< derivative of the cost in x,x
+  cv::Mat d_x_y;  ///< derivative of the cost in x,y
+  cv::Mat d_x_z;  ///< derivative of the cost in x,theta
+  cv::Mat d_y_x;  ///< derivative of the cost in y,x
+  cv::Mat d_y_y;  ///< derivative of the cost in y,y
+  cv::Mat d_y_z;  ///< derivative of the cost in y,theta
+  cv::Mat d_z_x;  ///< derivative of the cost in theta,x
+  cv::Mat d_z_y;  ///< derivative of the cost in theta,y
+  cv::Mat d_z_z;  ///< derivative of the cost in theta,theta
+};
+
 /// @brief POD holding all the data required for optimization
 struct data {
-  cv::Mat cost;     ///< cost matrix
-  cv::Mat d_x;      ///< derivative of the cost in x
-  cv::Mat d_y;      ///< derivative of the cost in y
-  cv::Mat d_theta;  ///< derivative of the cost in theta
-
-  Eigen::Vector2i center;  ///< center cell
+  cost_data core;
+  jacobian_data J;
+  hessian_data H;
 };
 
 /// @brief POD defining the parameters
 struct parameter {
   unsigned int padding = 2;  ///< padding of the given footprint (in cells)
+  bool generate_hessian = false;
 };
 
 /// @brief polygon where first row holds the x, and second row y values.
@@ -77,13 +163,18 @@ using polygon_msg = std::vector<geometry_msgs::Point>;
 struct pose_gradient {
   using parameter = internal::parameter;
 
+  // the three arguments for get_pose
+  using jacobian = internal::jacobian_data::jacobian;
+  using hessian = internal::hessian_data::hessian;
+  using pose = Eigen::Vector3f;
+
   pose_gradient() = default;
   pose_gradient(costmap_2d::Costmap2D& _cm, const polygon_msg& _footprint,
                 const parameter& _param);
   pose_gradient(costmap_2d::LayeredCostmap& _lcm, const parameter& _param);
 
-  std::pair<float, Eigen::Vector3d>
-  get_cost(const Eigen::Vector3d& _se2) const;
+  float
+  get_cost(const pose& _se2, jacobian* _J, hessian* _H) const;
 
 private:
   internal::data data_;
@@ -118,7 +209,7 @@ struct tolerance {
   /// @brief diffent "modes"
   enum class mode { NONE, ANGLE, SPHERE, BOX };
 
-  using pose = Eigen::Vector3d;
+  using pose = Eigen::Vector3f;
 
   /**
    * @brief noop-tolerance.
@@ -228,17 +319,17 @@ struct gradient_decent {
   /// @brief parameter for the optimization
   struct parameter {
     size_t iter = 10;      ///< maximal number of steps
-    double step_t = 1;     ///< maximal step size for translation (in cells)
-    double step_r = 0.1;   ///< maximal step size for rotation (in rads)
-    double epsilon = 0.1;  ///< cost-threshold for termination
+    float step_t = 1;     ///< maximal step size for translation (in cells)
+    float step_r = 0.1;   ///< maximal step size for rotation (in rads)
+    float epsilon = 0.1;  ///< cost-threshold for termination
     tolerance tol;         ///< maximal distance from _start
   };
 
   gradient_decent() = default;
   explicit gradient_decent(parameter&& _param) noexcept;
 
-  std::pair<float, Eigen::Vector3d>
-  solve(const pose_gradient& _pg, const Eigen::Vector3d& _start) const;
+  std::pair<float, Eigen::Vector3f>
+  solve(const pose_gradient& _pg, const Eigen::Vector3f& _start) const;
 
 private:
   parameter param_;  ///< parameterization for the optimization

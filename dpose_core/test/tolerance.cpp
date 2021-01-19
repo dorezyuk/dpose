@@ -10,14 +10,14 @@ namespace {
 // parameter with a pose and the expected result
 struct param {
   param(double x, double y, bool _ex) : pose(x, y, 0), expected(_ex) {}
-  Eigen::Vector3d pose;
+  Eigen::Vector3f pose;
   bool expected;
 };
 
 // fixture with origin, bounds and paramters
 struct fixture : public TestWithParam<param> {
-  Eigen::Vector3d origin = Eigen::Vector3d::Zero();
-  Eigen::Vector3d bounds = Eigen::Vector3d{2, 3, 0};
+  Eigen::Vector3f origin = Eigen::Vector3f::Zero();
+  Eigen::Vector3f bounds = Eigen::Vector3f{2, 3, 0};
   param p;
   fixture() : p(GetParam()) {}
 };

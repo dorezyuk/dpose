@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>dpose_recovery</name>
+  <version>0.0.0</version>
+  <description>The dpose recovery will minimize the cost of the footprint</description>
+
+  <maintainer email="dmitrij.dorezyuk@hotmail.de">Dima Dorezyuk</maintainer>
+
+  <license>MIT</license>
+
+  <buildtool_depend>catkin</buildtool_depend>
+
+  <depend>dpose_core</depend>
+  <depend>nav_core</depend>
+  <depend>pluginlib</depend>
+
+  <!-- non-ros-related libs -->
+  <depend>coinor-libipopt-dev</depend>
+
+  <test_depend>rostest</test_depend>
+
+</package>

@@ -175,8 +175,7 @@ struct pose_gradient {
   pose_gradient(costmap_2d::LayeredCostmap& _lcm, const parameter& _param);
 
   /// @brief returns the cost for the given se2 pose
-  /// @param[in] _se2 pose of interest. should be in the global frame of the
-  /// costmap.
+  /// @param[in] _se2 pose of interest. should be in the global frame.
   /// @param[out] _J optional jacobian. will be ignored if nullptr
   /// @param[out] _H optional hessian. will be ignored if nullptr
   float

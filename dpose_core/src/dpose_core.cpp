@@ -373,7 +373,7 @@ init_data(const polygon& _footprint, const parameter& _param) {
   // get the cost image
   out.core.cost = _get_cost(footprint, _param);
   // safe the image if we are running in debug mode (and scale the images)
-  assert(cv::imwrite("/tmp/cost.jpg", out.cost * 10));
+  assert(cv::imwrite("/tmp/cost.jpg", out.core.cost * 10));
 
   // get the derivatives
   out.J = _init_jacobian(out.core);

@@ -5,6 +5,11 @@
 namespace dpose_recovery {
 namespace internal {
 
+inline size_t
+little_gauss(size_t _n) noexcept {
+  return _n * (_n + 1) / 2;
+}
+
 Problem::Problem(costmap_2d::LayeredCostmap &_lcm, const Parameter &_our_param,
                  const pose_gradient::parameter &_param) :
     pg_(_lcm, _param),
@@ -14,6 +19,7 @@ Problem::Problem(costmap_2d::LayeredCostmap &_lcm, const Parameter &_our_param,
   // todo not sure about this lets see
   // if (!param_.steps)
   // throw std::invalid_argument("steps cannot be zero");
+  // param_.N = param_.steps * param_.dim_u;
 }
 
 bool
@@ -23,32 +29,29 @@ Problem::get_nlp_info(Index &n, Index &m, Index &nnz_jac_g, Index &nnz_h_lag,
   // dim_u should depend on the robot model (diff-drive vs omni-drive)
   n = param_.steps * param_.dim_u;
 
-  // one constraint: the cost must be non-lethal
-  m = 0;
+  // for now: no constraints. later on we might add maximum distance for the
+  // recovery.
+  m = nnz_jac_g = 0;
 
-  // todo this is not quite true
-  nnz_jac_g = 0;
-  nnz_h_lag = 10;
+  // our hessian is full. since we populate only the lower half of a NxN matrix,
+  // we can use the little-gauss formula to find the number of entries.
+  nnz_h_lag = little_gauss(n);
 
   index_style = TNLP::C_STYLE;
   return true;
 };
 
 bool
-Problem::get_bounds_info(Index n, Number *x_l, Number *x_u, Index m,
+Problem::get_bounds_info(Index n, Number *u_l, Number *u_u, Index m,
                          Number *g_l, Number *g_u) {
-  assert(n == param_.steps * param_.dim_u);
-  assert(m == 1);
+  // use eigen to assign x_l and x_u the values...
+  using map_t = Eigen::Map<Eigen::Matrix<Number, 2UL, Eigen::Dynamic>>;
+  map_t map_l(u_l, 2UL, n);
+  map_t map_u(u_u, 2UL, n);
 
-  for (Index ii = 0; ii != n; ++ii) {
-    x_l[ii] = param_.v_lower;
-    x_l[++ii] = param_.w_lower;
-  }
-
-  for (Index ii = 0; ii != n; ++ii) {
-    x_u[ii] = param_.v_upper;
-    x_u[++ii] = param_.w_upper;
-  }
+  // we restrict the range of the commands u to be within [u_lower, u_upper]
+  map_l.colwise() = param_.u_lower;
+  map_u.colwise() = param_.u_upper;
 
   return true;
 };
@@ -197,7 +200,8 @@ Problem::eval_h(Index n, const Number *u, bool new_u, Number obj_factor,
            0,          1;
       // clang-format on
 
-
+      // H_ii = [[df / (du_ii du_ii), df / (du_ii dw_ii)],
+      //         [df / (du_ii dw_ii), df / (dw_ii dw_ii)]]
       const Eigen::Matrix<float, 2UL, 2UL> H_ii = A.transpose() * H * A;
     }
   }

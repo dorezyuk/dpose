@@ -40,42 +40,123 @@ struct pose_gradient_data {
   pose_gradient::hessian H;
 };
 
-//  * /f[
-//  * H_{ii} =
-//   \begin{pmatrix}
-//   a_{1,1} & a_{1,2} & \cdots & a_{1,n} \\
-//   a_{2,1} & a_{2,2} & \cdots & a_{2,n} \\
-//   \vdots  & \vdots  & \ddots & \vdots  \\
-//   a_{m,1} & a_{m,2} & \cdots & a_{m,n}
-//   \end{pmatrix}
-//   /f]
-
 /**
- * @brief bla
- * 
- * @details 
- * here goes a nice formula
+ * @brief implements the MPC problem for avoiding obstacles.
  *
+ * @note: you should run doxygen on this...
+ *
+ * @section Introduction
+ *
+ * The pose of the robot at the timestep \f$ n \f$ in a global frame is
+ * given by \f$ \textbf{x}_n = \begin{bmatrix}x_{n} & y_{n} & \theta_{n}
+ * \end{bmatrix}^T \f$.
+ * Assuming a differential drive robot the control at the timestep \f$ n \f$ is
+ * defined by \f$ \textbf{u}_{n} = \begin{bmatrix} v_{n} & \omega_{n}
+ * \end{bmatrix}^T \f$. Here \f$ v_{n} \f$ denotes the translational and
+ * \f$\omega_{n}\f$ the angular velocity. The kinematic model of the robot is
+ * given by \f[ \begin{array}{rcl} \textbf{x}_{n} & = & \textbf{x}_{n-1} +
+ * \begin{bmatrix}
+ *                                                cos(\theta_{n-1}) & 0\\
+ *                                                sin(\theta_{n-1}) & 0\\
+ *                                                0 & 1
+ *                                          \end{bmatrix} \textbf{u}_{n} \\
+ *                & = & \textbf{x}_{n-1} + A_{n-1} \textbf{u}_{n}
+ * \end{array}
+ * \f]
+ *
+ * Due to the recursive nature of the equations above we can write every pose
+ * \f$ \textbf{x}_{n} \f$ as a function of all previously issued controls \f$
+ * \textbf{u}_{k}, k \le n \f$ and the start pose \f$ \textbf{x}_s \f$:
  * \f[
- *  |I_2|=\left| \int_{0}^T \psi(t) 
- *           \left\{ 
- *              u(a,t)-
- *              \int_{\gamma(t)}^a 
- *              \frac{d\theta}{k(\theta,t)}
- *              \int_{a}^\theta c(\xi)u_t(\xi,t)\,d\xi
- *           \right\} dt
- *        \right|
+ * \textbf{x}_n = g(\textbf{x}_s, \textbf{u}_0, \textbf{u}_1, \dots,
+ * \textbf{u}_n)
+ * \f]
+ *
+ * We denote the cost of the robot at the pose \f$ \textbf{x}_{n} \f$ as \f$
+ * f_{n}(\textbf{x}_n) \f$.
+ * This cost represents the cost in the sense of the `costmap_2d` framework.
+ * With the formula above we can write the cost \f$ f_n \f$ at the timestep \f$
+ * n \f$ and the overall cost of the entire trajectory \f$ f \f$ as
+ * \f[
+ * \begin{array}{rcl}
+ * f_{n} & = & f(g(\textbf{x}_s, \textbf{u}_0, \textbf{u}_1,
+ * \dots,\textbf{u}_n)) \\ f & = & \sum_{n}^{N} f_{n} \end{array}
+ * \f]
+ *
+ * We now formulate a MPC problem, where we want to find the sequence of
+ * commands which minimizes the overall cost \f$ f \f$ of the trajectory:
+ * \f[
+ *  \min_{\textbf{u}} f(\textbf{u}) \\
+ * \textbf{u}_{l} \le \textbf{u} \le \textbf{u}_u
+ * \f]
+ *
+ *  Here \f$ \textbf{u}_l \f$ denotes the lower and \f$
+ * \textbf{u}_u \f$ the upper limit for the command  \f$ \textbf{u} \f$.
+ *
+ * @section Solution
+ *
+ * `Ipopt` will mostly solve the problem for us.
+ * All we need to provide is the jacobian and the hessian of the cost function
+ * \f$ f \f$: \f[ \begin{array}{rcl}
+ *
+ * \nabla f & = & \begin{bmatrix}
+ *              \frac{\partial f}{\partial v_{0}} &
+ *              \frac{\partial f}{\partial \omega_{0}} &
+ *              \cdots &
+ *              \frac{\partial f}{\partial \omega_{N}}
+ *            \end{bmatrix}^T \\
+ * \nabla^2 f & = & \begin{bmatrix}
+ *                  \frac{\partial f}{\partial v_{0} \partial v_{0}} &
+ * \frac{\partial f}{\partial v_{0} \partial \omega_{0}} & \cdots \frac{\partial
+ * f}{\partial v_{0} \partial \omega_{N}} \\
+ *                  \frac{\partial f}{\partial \omega_{0} \partial v_{0}} &
+ * \frac{\partial f}{\partial \omega_{0} \partial \omega_{0}} & \cdots
+ * \frac{\partial f}{\partial \omega_{0} \partial \omega_{N}} \\
+ *                  \vdots \\
+ *                  \frac{\partial f}{\partial \omega_{N} \partial v_{0}} &
+ * \frac{\partial f}{\partial \omega_{N} \partial \omega_{0}} & \cdots
+ * \frac{\partial f}{\partial \omega_{N} \partial \omega_{N}}
+ *
+ *                  \end{bmatrix}
+ * \end{array}
+ *
+ * \f]
+ *
+ * Every command \f$ \textbf{u}_n \f$ is an argument of the cost function \f$
+ * f_m \f$ for \f$ n \le m \f$.
+ * The derivative with respect to  \f$ \textbf{u}_n \f$ involves therefore the
+ * cost terms \f$ f_m \f$ and is given by \f[ \frac{\partial f}{\partial
+ * \textbf{u}_n} = \sum_{m=n}^{N}\frac{\partial f_{m}}{\partial \textbf{u}_n}
+ * \f]
+ *
+ * The `dpose_core` library outputs the gradient of \f$ f_n \f$ with respect to
+ * \f$ \textbf{x}_n \f$.
+ * We can apply the chain-rule to get the desired data
+ * \f[
+ * \frac{\partial f_m}{\partial \textbf{u}_n} = \frac{\partial f_m}{\partial
+ * \textbf{x}_m} \frac{\partial \textbf{x}_m}{\partial \textbf{u}_n}
+ * \f]
+ * The partial derivative of \f$ \textbf{x} \f$ with respect to \f$ \textbf{u}
+ * \f$ is given by \f[ \frac{\partial \textbf{x}_m}{\partial \textbf{u}_n} =
+ * \begin{bmatrix}
+ *  -sin(\theta_{n-1}) & cos(\theta_{n-1}) \\
+ *  cos(\theta_{n-1}) & -sin(\theta_{n-1}) \\
+ *  0                    1
+ * \end{bmatrix}
  * \f]
  */
 struct Problem : public TNLP {
   struct Parameter {
     size_t steps;  ///< number of look a steps in the horizon
     size_t dim_u = 2;
+    size_t N;   ///< steps * dim_u
     double dt;  ///< time resolution, must be positive
-    double v_lower;
-    double v_upper;
-    double w_lower;
-    double w_upper;
+    Eigen::Vector2d u_lower;
+    Eigen::Vector2d u_upper;
+    // double v_lower;
+    // double v_upper;
+    // double w_lower;
+    // double w_upper;
   };
 
   Problem(costmap_2d::LayeredCostmap &_lcm, const Parameter &_our_param,

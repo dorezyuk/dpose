@@ -491,18 +491,18 @@ _to_rays(const rectangle_type<int>& _rect) noexcept {
   return out;
 }
 
-using transform_type = Eigen::Isometry2f;
+using transform_type = Eigen::Isometry2d;
 
 inline transform_type
-to_eigen(float _x, float _y, float _yaw) noexcept {
-  return Eigen::Translation2f(_x, _y) * Eigen::Rotation2Df(_yaw);
+to_eigen(double _x, double _y, double _yaw) noexcept {
+  return Eigen::Translation2d(_x, _y) * Eigen::Rotation2Dd(_yaw);
 }
 
 /// @brief checks if the _box is inside a rectangle starting at (0, 0) and
 /// ending at _max
 inline bool
-is_inside(const Eigen::Vector2f& _max,
-          const rectangle_type<float>& _box) noexcept {
+is_inside(const Eigen::Vector2d& _max,
+          const rectangle_type<double>& _box) noexcept {
   return (_box.array() >= 0).all() && (_box.row(0).array() < _max(0)).all() &&
          (_box.row(1).array() < _max(1)).all();
 }
@@ -518,7 +518,7 @@ pose_gradient::pose_gradient(costmap_2d::LayeredCostmap& _lcm,
 
 float
 pose_gradient::get_cost(const pose& _se2, jacobian* _J, hessian* _H) const {
-  using rectangle_f = rectangle_type<float>;
+  using rectangle_d = rectangle_type<double>;
   using cm_polygon = std::vector<costmap_2d::MapLocation>;
   using namespace internal;
 
@@ -533,8 +533,8 @@ pose_gradient::get_cost(const pose& _se2, jacobian* _J, hessian* _H) const {
       to_eigen(-data_.core.center.x(), -data_.core.center.y(), 0);
   const transform_type m_to_k = m_to_b * b_to_k;
 
-  const rectangle_f k_kernel_bb = _to_rectangle(data_.core.cost).cast<float>();
-  const rectangle_f m_kernel_bb =
+  const rectangle_d k_kernel_bb = _to_rectangle(data_.core.cost).cast<double>();
+  const rectangle_d m_kernel_bb =
       (m_to_k * k_kernel_bb).array().round().matrix();
 
   float sum = 0;
@@ -567,7 +567,7 @@ pose_gradient::get_cost(const pose& _se2, jacobian* _J, hessian* _H) const {
         continue;
 
       // convert to the kernel frame
-      const Eigen::Vector2f m_cell(x, line.first);
+      const Eigen::Vector2d m_cell(x, line.first);
       const Eigen::Vector2i k_cell =
           (k_to_m * m_cell).array().round().cast<int>().matrix();
 
@@ -590,7 +590,7 @@ pose_gradient::get_cost(const pose& _se2, jacobian* _J, hessian* _H) const {
 
   // flip the derivate back to the original frame.
   // note: we don't do this for the "theta"-part
-  Eigen::Matrix3f rot = m_to_k.matrix();
+  Eigen::Matrix3d rot = m_to_k.matrix();
   rot(0, 2) = 0;
   rot(1, 2) = 0;
   if (_J)
@@ -641,13 +641,13 @@ tolerance::tolerance(std::initializer_list<std::pair<mode, pose>> _list) {
 gradient_decent::gradient_decent(parameter&& _param) noexcept :
     param_(std::move(_param)) {}
 
-std::pair<float, Eigen::Vector3f>
+std::pair<float, Eigen::Vector3d>
 gradient_decent::solve(const pose_gradient& _pg,
-                       const Eigen::Vector3f& _start) const {
+                       const Eigen::Vector3d& _start) const {
   // super simple gradient decent algorithm with a limit on the max step
   // for now we set it to 1 cell size.
-  std::pair<float, Eigen::Vector3f> res{0.0F, _start};
-  Eigen::Vector3f J;
+  std::pair<float, Eigen::Vector3d> res{0.0F, _start};
+  internal::jacobian_data::jacobian J;
   for (size_t ii = 0; ii != param_.iter; ++ii) {
     // get the derivative (d)
     res.first = _pg.get_cost(res.second, &J, nullptr);

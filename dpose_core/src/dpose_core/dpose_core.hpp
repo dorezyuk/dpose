@@ -54,16 +54,14 @@ struct jacobian_data {
    * the jacobian has the form
    * [x, y, z]^T
    */
-  using jacobian = Eigen::Vector3f;
+  using jacobian = Eigen::Vector3d;
 
   /// @brief returns the jacobian for given x and y.
   inline jacobian
   get(int _y, int _x) const {
-    // clang-format off
-    return {d_x.at<float>(_y, _x), 
-            d_y.at<float>(_y, _x),
-            d_z.at<float>(_y, _x)};
-    // clang-format on
+    return {static_cast<double>(d_x.at<float>(_y, _x)),
+            static_cast<double>(d_y.at<float>(_y, _x)),
+            static_cast<double>(d_z.at<float>(_y, _x))};
   }
 
   cv::Mat d_x;  ///< derivative of the cost in x
@@ -80,7 +78,7 @@ struct hessian_data {
    *  [y_x, y_y, y_z],
    *  [z_x, z_y, z_z]]
    */
-  using hessian = Eigen::Matrix3f;
+  using hessian = Eigen::Matrix3d;
 
   /// @brief returns the hessian for given x and y.
   inline hessian
@@ -151,7 +149,7 @@ using polygon_msg = std::vector<geometry_msgs::Point>;
  * dpose_core::pose_gradient pg(my_costmap, my_footprint);
  *
  * // get the gradient for a pose
- * Eigen::Vector3f grad;
+ * Eigen::Vector3d grad;
  * const auto res = pg.get_cost(my_pose, grad, nullptr);
  * @endcode
  *
@@ -167,7 +165,7 @@ struct pose_gradient {
   // the three arguments for get_pose
   using jacobian = internal::jacobian_data::jacobian;
   using hessian = internal::hessian_data::hessian;
-  using pose = Eigen::Vector3f;
+  using pose = Eigen::Vector3d;
 
   pose_gradient() = default;
   pose_gradient(costmap_2d::Costmap2D& _cm, const polygon_msg& _footprint,
@@ -214,7 +212,7 @@ struct tolerance {
   /// @brief diffent "modes"
   enum class mode { NONE, ANGLE, SPHERE, BOX };
 
-  using pose = Eigen::Vector3f;
+  using pose = Eigen::Vector3d;
 
   /**
    * @brief noop-tolerance.
@@ -324,17 +322,17 @@ struct gradient_decent {
   /// @brief parameter for the optimization
   struct parameter {
     size_t iter = 10;     ///< maximal number of steps
-    float step_t = 1;     ///< maximal step size for translation (in cells)
-    float step_r = 0.1;   ///< maximal step size for rotation (in rads)
-    float epsilon = 0.1;  ///< cost-threshold for termination
+    double step_t = 1;     ///< maximal step size for translation (in cells)
+    double step_r = 0.1;   ///< maximal step size for rotation (in rads)
+    double epsilon = 0.1;  ///< cost-threshold for termination
     tolerance tol;        ///< maximal distance from _start
   };
 
   gradient_decent() = default;
   explicit gradient_decent(parameter&& _param) noexcept;
 
-  std::pair<float, Eigen::Vector3f>
-  solve(const pose_gradient& _pg, const Eigen::Vector3f& _start) const;
+  std::pair<float, Eigen::Vector3d>
+  solve(const pose_gradient& _pg, const Eigen::Vector3d& _start) const;
 
 private:
   parameter param_;  ///< parameterization for the optimization

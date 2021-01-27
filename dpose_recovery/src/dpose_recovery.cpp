@@ -102,7 +102,7 @@ Problem::on_new_u(Index n, const Number *u) {
     curr = diff_drive::step(prev, u[jj], u[jj + 1]);
 
     // find J_ii and H_ii.
-    cost += pg_.get_cost(curr.cast<float>(), &J.at(ii), &H.at(ii));
+    cost += pg_.get_cost(curr, &J.at(ii), &H.at(ii));
 
     prev = curr;
   }
@@ -130,7 +130,6 @@ Problem::on_new_u(Index n, const Number *u) {
   H_hat = H;
   _create_hat(H_hat.begin(), H_hat.end());
   _create_hat(J_hat.begin(), J_hat.end());
-
 }
 
 bool
@@ -138,6 +137,7 @@ Problem::eval_f(Index n, const Number *u, bool new_u, Number &_cost) {
   if (new_u)
     on_new_u(n, u);
   _cost = cost;
+  return true;
 }
 
 bool
@@ -219,16 +219,31 @@ Problem::eval_h(Index n, const Number *u, bool new_u, Number obj_factor,
   }
   else {
     // populate the hessian
-    size_t dd = 0;
+    size_t uu = 0;
+    size_t ww = 0;
     diff_drive::jacobian T_tilde_rr, T_tilde_cc, C_hat_diff;
 
     // the hess matrix is [[df / (dv_r dv_c), df / (dv_r dw_c)],
     //                     [df / (dw_r dv_c), df / (dw_r dw_c)]]
     Eigen::Matrix<Number, 2UL, 2UL> hess;
-    // todo fix the first elements
-    dd = 3;
-    for (size_t rr = 1; rr != param_.steps; ++rr)
-      for (size_t cc = 0; cc <= rr; ++cc) {
+
+    // first element is "special" since there is no o-1 index
+    T_tilde_rr = T.front() - R_hat.front();
+    C_hat_diff = C_hat.back();
+    // clang-format off
+    hess = T_tilde_rr.transpose() * H_hat.back() * T_tilde_rr +
+           T_tilde_rr.transpose() * C_hat_diff +
+           C_hat_diff.transpose() * T_tilde_rr +
+           D_hat.back();
+    // clang-format on
+    values[uu] = hess(0, 0);
+    values[++ww] = hess(1, 0);  // ww is 1
+    values[++ww] = hess(1, 1);  // ww is 2
+
+    for (size_t rr = 1; rr != param_.steps; ++rr) {
+      uu = ww;           
+      ww += (rr * 2) + 1; 
+      for (size_t cc = 0; cc != rr; ++cc) {
         T_tilde_rr = T.at(rr) - R_hat.at(rr);
         T_tilde_cc = T.at(cc) - R_hat.at(cc);
         C_hat_diff = C_hat.back() - C_hat.at(rr - 1);
@@ -240,9 +255,25 @@ Problem::eval_h(Index n, const Number *u, bool new_u, Number obj_factor,
         // clang-format on
 
         // copy the hess-values into the destination
-        // for(size_t ii = 0; ii != 4; ++ii, ++dd)
-        //   values[++dd] = hess(ii);
+        values[++uu] = hess(0, 0);
+        values[++uu] = hess(0, 1);
+        values[++ww] = hess(1, 0);
+        values[++ww] = hess(1, 1);
       }
+      // last element is "special" since we just need three out of four values
+      T_tilde_rr = T.at(rr) - R_hat.at(rr);
+      C_hat_diff = C_hat.back() - C_hat.at(rr - 1);
+      // clang-format off
+      hess = T_tilde_rr.transpose() * (H_hat.back() - H_hat.at(rr - 1)) * T_tilde_rr +
+              T_tilde_rr.transpose() * C_hat_diff +
+              C_hat_diff.transpose() * T_tilde_rr +
+              (D_hat.back() - D_hat.at(rr - 1));
+      // clang-format on
+
+      values[++uu] = hess(0, 0);
+      values[++ww] = hess(1, 0);
+      values[++ww] = hess(1, 1);
+    }
   }
   return true;
 }

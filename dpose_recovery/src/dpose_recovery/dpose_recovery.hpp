@@ -33,13 +33,39 @@ step(const x_vector &_x, const Number &_u, const Number &_w) noexcept {
   const x_vector x_d{std::cos(_x(2)) * _u, std::sin(_x(2)) * _u, _w};
   return _x + x_d;
 }
+
+using jacobian = Eigen::Matrix<Number, x_dim, u_dim>;
+
+inline void
+T_jacobian(const Number &_theta_prev, jacobian &_T_curr) noexcept {
+  _T_curr << std::cos(_theta_prev), 0, std::sin(_theta_prev), 0, 0, 1;
+}
+
+// returns constant part of the Jacobian T_n based on the x_{n-1} state
+inline void
+T_jacobian(const x_vector &_x_prev, jacobian &_T_curr) noexcept {
+  T_jacobian(_x_prev.z(), _T_curr);
+}
+
+inline void
+R_jacobian(const Number &_theta_prev, const Number &_v_curr,
+           jacobian &_R_curr) noexcept {
+  _R_curr << 0, -_v_curr * std::sin(_theta_prev), 0,
+      _v_curr * std::cos(_theta_prev), 0, 0;
+}
+
+inline void
+R_jacobian(const x_vector &_x_prev, const u_vector &_u_curr,
+           jacobian &_R_curr) noexcept {
+  R_jacobian(_x_prev.z(), _u_curr.x(), _R_curr);
+}
+
 }  // namespace diff_drive
 
 struct pose_gradient_data {
   pose_gradient::jacobian J;
   pose_gradient::hessian H;
 };
-
 
 struct Problem : public TNLP {
   struct Parameter {
@@ -102,6 +128,24 @@ struct Problem : public TNLP {
                     IpoptCalculatedQuantities *ip_cq) override;
 
 private:
+
+  void
+  on_new_u(Index n, const Number *u);
+
+  std::vector<diff_drive::jacobian> T;
+  std::vector<diff_drive::jacobian> R;
+  std::vector<diff_drive::jacobian> R_hat;
+  std::vector<pose_gradient::jacobian> J;
+  std::vector<pose_gradient::jacobian> J_hat;
+  std::vector<Eigen::Matrix<Number, 2UL, 1UL>> J_tilde;
+  std::vector<pose_gradient::hessian> H;
+  std::vector<pose_gradient::hessian> H_hat;
+  std::vector<Eigen::Matrix<Number, 3UL, 2UL>> C_hat;
+  std::vector<Eigen::Matrix<Number, 2UL, 2UL>> D_hat;
+
+
+  Number cost;
+
   pose_gradient pg_;
   Eigen::Vector3d x0_;
   std::vector<Eigen::Vector3d> x_;

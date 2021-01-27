@@ -124,7 +124,7 @@ The derivative of \f$ f(\textbf{u}) \f$ with respect to  \f$ \textbf{u}_n \f$ ca
 \begin{array}{rcl}
 \frac{\partial f}{\partial \textbf{u}_n} 
 &=& \sum_{m=n}^{N} A_{m, n}^T J_m \\
-&=& (T_n-\hat{R}_n)^T \sum_{m=n}^N J_m + \sum_{m=n}^N \hat{R}_m J_m
+&=& (T_n-\hat{R}_n)^T \sum_{m=n}^N J_m + \sum_{m=n}^N \hat{R}_m^T J_m
 \end{array}
 \f]
 Again, we can cache the sums since they are not dependent on the current time step \f$ n \f$.
@@ -138,7 +138,7 @@ Lets introduce two final variables
 Those variables don't have any particular meaning.
 We define them so we can cache during our computation.
 Additionally we will find that \f$ \widetilde{T}_n \f$ will be used for the computation of the Hessian.
-With the relations \f$ \sum_{k=n}^{N} J_k = \hat{J}_N - \hat{J}_{n-1} \f$ and \f$ \sum_{m=n}^N \hat{R}_m J_m = \widetilde{J}_N - \widetilde{J}_{n-1} \f$ we can rewrite the equation into 
+With the relations \f$ \sum_{k=n}^{N} J_k = \hat{J}_N - \hat{J}_{n-1} \f$ and \f$ \sum_{m=n}^N \hat{R}_m^T J_m = \widetilde{J}_N - \widetilde{J}_{n-1} \f$ we can rewrite the equation into 
 \f[
 \frac{\partial f}{\partial \textbf{u}_n} = \widetilde{T}_n^T (\hat{J}_N - \hat{J}_{n -1}) + (\widetilde{J}_N - \widetilde{J}_{n-1})
 \f]
@@ -206,7 +206,7 @@ With the defined helper variables following simplifications can be made:
 Using these equations and the relation from the last chapter  \f$ \widetilde{T}_n = T_n - \hat{R}_n \f$ we can rewrite the partial derivative as 
 \f[
 \frac{\partial f}{\partial \textbf{u}_n \partial \textbf{u}_k}
-= \widetilde{T}_n^T (\hat{H}_N - \hat{H}_{o-1}) \widetilde{T}_k + \widetilde{T}_n^T (\hat{C}_N - \hat{C}_{o-1}) + (\hat{C}_N - \hat{C}_{o-1})^T \widetilde{T}_k +  + (\hat{D}_N - \hat{D}_{o-1})   
+= \widetilde{T}_n^T (\hat{H}_N - \hat{H}_{o-1}) \widetilde{T}_k + \widetilde{T}_n^T (\hat{C}_N - \hat{C}_{o-1}) + (\hat{C}_N - \hat{C}_{o-1})^T \widetilde{T}_k + (\hat{D}_N - \hat{D}_{o-1})   
 \f]
 
 `Ipopt` expects only the lower half of the Hessian - since the matrix is symmetric.

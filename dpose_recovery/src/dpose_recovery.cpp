@@ -15,12 +15,17 @@ Problem::Problem(costmap_2d::LayeredCostmap &_lcm, const Parameter &_our_param,
     pg_(_lcm, _param),
     param_(_our_param),
     x_(_our_param.steps),
-    pg_data(_our_param.steps) {
-  // todo not sure about this lets see
-  // if (!param_.steps)
-  // throw std::invalid_argument("steps cannot be zero");
-  // param_.N = param_.steps * param_.dim_u;
-}
+    pg_data(_our_param.steps),
+    R(_our_param.steps),
+    T(_our_param.steps),
+    R_hat(_our_param.steps),
+    J(_our_param.steps),
+    J_hat(_our_param.steps),
+    J_tilde(_our_param.steps),
+    H(_our_param.steps),
+    H_hat(_our_param.steps),
+    C_hat(_our_param.steps),
+    D_hat(_our_param.steps) {}
 
 bool
 Problem::get_nlp_info(Index &n, Index &m, Index &nnz_jac_g, Index &nnz_h_lag,
@@ -60,83 +65,120 @@ bool
 Problem::get_starting_point(Index n, bool init_x, Number *x, bool init_z,
                             Number *z_L, Number *z_U, Index m, bool init_lambda,
                             Number *lambda) {
-  assert(init_x == true);
-  assert(init_z == false);
-  assert(init_lambda == false);
-
   // todo initialize to the given starting point
   // todo what a good guess, how can I hot-start and when to reset?
   return true;
 };
 
-bool
-Problem::eval_f(Index n, const Number *u, bool new_u, Number &cost) {
-  assert(n == param_.steps * param_.dim_u);
-  // get the x-states based on the u commands: x_curr = f(x_prev, u_curr)
-  // x_1 = x_0 + v_1 * cos(z_0)
-  // y_1 = y_0 + v_1 * sin(z_0)
-  // z_1 = z_0 + w_1
-  // init the first step
-  x_[0] = diff_drive::step(x0_, u[0], u[1]);
+template <typename _Iter>
+void
+_create_hat(_Iter _begin, _Iter _end) {
+  if (_begin == _end)
+    return;
 
-  // jj is the index within u, which has the form [v0, w0, v1, w1...]
-  for (size_t ii = 1, jj = 2; ii != param_.steps; ++ii, jj += 2)
-    x_[ii] = diff_drive::step(x_[ii - 1], u[jj], u[jj + 1]);
+  for (_Iter next = std::next(_begin); next != _end; ++next, ++_begin)
+    *next += *_begin;
+}
 
-  // get the sum of the costs, J and H for every state
+void
+Problem::on_new_u(Index n, const Number *u) {
+  using state_t = Eigen::Vector3d;
+
+  // define the states
+  state_t prev = x0_;
+  state_t curr;
+
+  // reset the cost
   cost = 0;
-  for (size_t ii = 0; ii != param_.steps; ++ii)
-    cost += pg_.get_cost(x_[ii].cast<float>(), &pg_data[ii].J, &pg_data[ii].H);
 
-  return true;
+  // jj is the index within u, which has the form [v0, w0, v1, w1,..., wN]
+  for (size_t ii = 0, jj = 0; ii != param_.steps; ++ii, jj += 2) {
+    // now get the jacobians of the current state T_ii and R_ii
+    // note: at this step we safe R_ii into the R_hat_ii buffer
+    diff_drive::T_jacobian(prev, T.at(ii));
+    diff_drive::R_jacobian(prev.z(), u[jj + 1], R_hat.at(ii));
+
+    // get the state x_n = A x_{n-1} + B u_n
+    curr = diff_drive::step(prev, u[jj], u[jj + 1]);
+
+    // find J_ii and H_ii.
+    cost += pg_.get_cost(curr.cast<float>(), &J.at(ii), &H.at(ii));
+
+    prev = curr;
+  }
+
+  // init the R_hat
+  _create_hat(R_hat.begin(), R_hat.end());
+
+  // init J_tilde, C_hat and D_hat todo rename to P_hat
+  for (size_t ii = 0; ii != param_.steps; ++ii)
+    J_tilde.at(ii) = R_hat.at(ii).transpose() * J.at(ii);
+
+  for (size_t ii = 0; ii != param_.steps; ++ii)
+    C_hat.at(ii) = H.at(ii) * R_hat.at(ii);
+
+  for (size_t ii = 0; ii != param_.steps; ++ii)
+    D_hat.at(ii) = R_hat.at(ii).transpose() * C_hat.at(ii);
+
+  _create_hat(C_hat.begin(), C_hat.end());
+  _create_hat(D_hat.begin(), D_hat.end());
+  _create_hat(J_tilde.begin(), J_tilde.end());
+
+  // init J_hat and H_hat
+  // todo we dont need J and H
+  J_hat = J;
+  H_hat = H;
+  _create_hat(H_hat.begin(), H_hat.end());
+  _create_hat(J_hat.begin(), J_hat.end());
+
+}
+
+bool
+Problem::eval_f(Index n, const Number *u, bool new_u, Number &_cost) {
+  if (new_u)
+    on_new_u(n, u);
+  _cost = cost;
 }
 
 bool
 Problem::eval_grad_f(Index n, const Number *u, bool new_u, Number *grad_f) {
-  assert(n == param_.steps * param_.dim_u);
+  if (new_u)
+    on_new_u(n, u);
 
-  if (new_u) {
-    // todo init the pg_data again...
+  using gradient = Eigen::Matrix<Number, diff_drive::u_dim, 1UL>;
+  diff_drive::jacobian T_tilde;
+  gradient grad;
+
+  // catch the degenerate case - we need front() and back() to be defined on our
+  // vectors.
+  if (T.empty())
+    return false;
+
+  // the outout grad_f hat the form of
+  // [df / dv_0, df / dw_O, df / dv_1, df /dw_1, ... df /dw_N]
+  // we will use dd as the index on the grad_f (dd as in destination)
+  size_t dd = 0;
+
+  // the first step is somewhat special since the minus terms are missing.
+  T_tilde = T.front() - R_hat.front();
+
+  // grad contains the gradient of f with respect to v_0 and w_0
+  grad = T_tilde.transpose() * J_hat.back() + J_tilde.back();
+  grad_f[dd] = grad(0);
+  grad_f[++dd] = grad(1);
+
+  for (size_t ii = 1; ii != param_.steps; ++ii) {
+    T_tilde = T.at(ii) - R_hat.at(ii);
+    // grad contains the gradient of f with respect to v_ii and w_ii
+    grad = T_tilde.transpose() * (J_hat.back() - J_hat.at(ii - 1)) +
+           (J_tilde.back() - J_tilde.at(ii - 1));
+    grad_f[++dd] = grad(0);
+    grad_f[++dd] = grad(1);
   }
 
-  // get the gradient for every u; the final result will look like
-  // [df / du_0, df / dw_0, df / du_1, df / dw_1 ..., df / du_N, df / dw_N]
-  float theta = x0_.z();
-  // get the sum of all thetas
-  for (size_t ii = 0; ii != param_.steps; ++ii)
-    theta += u[ii * 2 + 1];
+  // make sure that we have reached the end
+  assert(dd == n);
 
-  pose_gradient::jacobian J = pose_gradient::jacobian::Zero();
-  for (int ii = param_.steps, nn = n; ii != 0; --ii, --nn) {
-    // dpose_core returns df_n / dx_n. we apply the chain rule to get
-    // df / du_i = sum over n((df_n / dx_n) * (dx_n / du_i)).
-    // dx_n / du_i is zero if n < i, since earlier steps are independent from
-    // their successors. for n >= i following applies:
-    // d_x_n / d_v_i = cos(z_{0...n-1})
-    // d_y_n / d_v_i = sin(z_{0...n-1})
-    // d_z_n / d_v_1 = 0
-    // d_x_1 / d_w_1 = -sin(z_0)
-    // d_y_1 / d_w_1 = cos(z_0)
-    // d_z_1 / d_w_1 = 1
-    // accumulate the J
-    J += pg_data[ii - 1].J;
-
-    // get the transformation matrix A
-    const auto cos_theta = std::cos(theta);
-    const auto sin_theta = std::sin(theta);
-    theta -= u[nn];
-
-    Eigen::Matrix<float, 3UL, 2UL> A;
-    // clang-format off
-    A << cos_theta, -sin_theta,
-         sin_theta,  cos_theta,
-         0,          1;
-    // clang-format on
-
-    const Eigen::Matrix<float, 2UL, 1UL> grad_fn = A.transpose() * J;
-    grad_f[nn] = grad_fn(1);
-    grad_f[--nn] = grad_fn(0);
-  }
   return true;
 };
 
@@ -155,15 +197,14 @@ bool
 Problem::eval_h(Index n, const Number *u, bool new_u, Number obj_factor,
                 Index m, const Number *lambda, bool new_lambda, Index nele_hess,
                 Index *iRow, Index *jCol, Number *values) {
-  assert(n == param_.steps * param_.dim_u);
-  if (new_u) {
-    // init the pg-data
-  }
+  if (new_u)
+    on_new_u(n, u);
 
   if (!values) {
     // init the rows and cols
     // [[df / (du0 du0), df / (du0 dw0), ..., df / (du0 dwN)],
     //  [df / (dw0 du0), df / (dw0 dw0), ..., df / (dw0 dwN)],
+    //  [df / (du1 du0), df / (du1 dw0), ..., df / (du1 dwN)],
     //  ...
     //  [df / (dwN du0), df / (dwN dw0), ..., df / (dwN dwN)]]
     Index idx = 0;
@@ -178,32 +219,30 @@ Problem::eval_h(Index n, const Number *u, bool new_u, Number obj_factor,
   }
   else {
     // populate the hessian
-    float theta = x0_.z();
-    // get the sum of all thetas
-    for (size_t ii = 0; ii != param_.steps; ++ii)
-      theta += u[ii * 2 + 1];
+    size_t dd = 0;
+    diff_drive::jacobian T_tilde_rr, T_tilde_cc, C_hat_diff;
 
-    pose_gradient::hessian H = pose_gradient::hessian::Zero();
-    for (int ii = param_.steps, nn = n; ii != 0; --ii, --nn) {
-      // accumulate the H
-      H += pg_data[ii - 1].H;
+    // the hess matrix is [[df / (dv_r dv_c), df / (dv_r dw_c)],
+    //                     [df / (dw_r dv_c), df / (dw_r dw_c)]]
+    Eigen::Matrix<Number, 2UL, 2UL> hess;
+    // todo fix the first elements
+    dd = 3;
+    for (size_t rr = 1; rr != param_.steps; ++rr)
+      for (size_t cc = 0; cc <= rr; ++cc) {
+        T_tilde_rr = T.at(rr) - R_hat.at(rr);
+        T_tilde_cc = T.at(cc) - R_hat.at(cc);
+        C_hat_diff = C_hat.back() - C_hat.at(rr - 1);
+        // clang-format off
+        hess = T_tilde_rr.transpose() * (H_hat.back() - H_hat.at(rr - 1)) * T_tilde_cc +
+               T_tilde_rr.transpose() * C_hat_diff +
+               C_hat_diff.transpose() * T_tilde_cc +
+               (D_hat.back() - D_hat.at(rr - 1));
+        // clang-format on
 
-      // get the transformation matrix A
-      const auto cos_theta = std::cos(theta);
-      const auto sin_theta = std::sin(theta);
-      theta -= u[nn];
-
-      Eigen::Matrix<float, 3UL, 2UL> A;
-      // clang-format off
-      A << cos_theta, -sin_theta,
-           sin_theta,  cos_theta,
-           0,          1;
-      // clang-format on
-
-      // H_ii = [[df / (du_ii du_ii), df / (du_ii dw_ii)],
-      //         [df / (du_ii dw_ii), df / (dw_ii dw_ii)]]
-      const Eigen::Matrix<float, 2UL, 2UL> H_ii = A.transpose() * H * A;
-    }
+        // copy the hess-values into the destination
+        // for(size_t ii = 0; ii != 4; ++ii, ++dd)
+        //   values[++dd] = hess(ii);
+      }
   }
   return true;
 }

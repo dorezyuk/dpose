@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.6.0)
 project(dpose_recovery)
 
-set(CATKIN_PACKAGES dpose_core nav_core pluginlib)
+set(CATKIN_PACKAGES dpose_core nav_core pluginlib tf2 tf2_geometry_msgs)
 add_compile_definitions("HAVE_CSTDDEF")
 # add_compile_options(-Wpedantic -Wall -Wextra)
 

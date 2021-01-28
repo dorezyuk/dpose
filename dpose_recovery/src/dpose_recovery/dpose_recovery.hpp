@@ -5,8 +5,8 @@
 
 #include <nav_core/recovery_behavior.h>
 
-#include <IpTNLP.hpp>
 #include <IpIpoptApplication.hpp>
+#include <IpTNLP.hpp>
 
 #include <Eigen/Dense>
 
@@ -131,22 +131,18 @@ struct Problem : public TNLP {
                     IpoptCalculatedQuantities *ip_cq) override;
 
 private:
-
   void
   on_new_u(Index n, const Number *u);
 
   std::vector<diff_drive::jacobian> T;
   std::vector<diff_drive::jacobian> R;
   std::vector<diff_drive::jacobian> R_hat;
-  std::vector<pose_gradient::jacobian> J;
   std::vector<pose_gradient::jacobian> J_hat;
   std::vector<Eigen::Matrix<Number, 2, 1>> J_tilde;
-  std::vector<pose_gradient::hessian> H;
   std::vector<pose_gradient::hessian> H_hat;
   std::vector<Eigen::Matrix<Number, 3, 2>> C_hat;
   std::vector<Eigen::Matrix<Number, 2, 2>> D_hat;
   std::vector<Eigen::Vector2d> u;
-
 
   Number cost;
 

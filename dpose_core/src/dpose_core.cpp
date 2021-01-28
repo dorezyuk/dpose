@@ -41,7 +41,7 @@ namespace dpose_core {
 
 /// @brief a closed rectangle (hence 5 columns)
 template <typename _T>
-using rectangle_type = Eigen::Matrix<_T, 2UL, 5UL>;
+using rectangle_type = Eigen::Matrix<_T, 2, 5>;
 
 /// @brief constructs a rectangle with the given width and height
 /// @param w width of the rectangle
@@ -319,25 +319,26 @@ _init_jacobian(const cost_data& _data) {
 hessian_data
 _init_hessian(const jacobian_data& _J, const Eigen::Vector2i& _center) {
   hessian_data H;
+  // todo this is crap
   // second derivative to x
-  cv::Sobel(H.d_x_x, _J.d_x, cv::DataType<float>::type, 1, 0, 3);
-  cv::Sobel(H.d_y_x, _J.d_y, cv::DataType<float>::type, 1, 0, 3);
-  cv::Sobel(H.d_z_x, _J.d_z, cv::DataType<float>::type, 1, 0, 3);
+  cv::Sobel(_J.d_x, H.d_x_x, cv::DataType<float>::type, 1, 0, 3);
+  cv::Sobel(_J.d_y, H.d_y_x, cv::DataType<float>::type, 1, 0, 3);
+  cv::Sobel(_J.d_z, H.d_z_x, cv::DataType<float>::type, 1, 0, 3);
 
   // safe the hessians if compiled in debug mode
   assert(cv::imwrite("/tmp/d_x_x.jpg", H.d_x_x * 10 + 100));
-  assert(cv::imwrite("/tmp/d_x_y.jpg", H.d_x_y * 10 + 100));
-  assert(cv::imwrite("/tmp/d_x_theta.jpg", H.d_x_z * 10 + 100));
+  assert(cv::imwrite("/tmp/d_y_x.jpg", H.d_y_x * 10 + 100));
+  assert(cv::imwrite("/tmp/d_theta_x.jpg", H.d_z_x * 10 + 100));
 
   // second derivative to y
-  cv::Sobel(H.d_x_y, _J.d_x, cv::DataType<float>::type, 0, 1, 3);
-  cv::Sobel(H.d_y_y, _J.d_y, cv::DataType<float>::type, 0, 1, 3);
-  cv::Sobel(H.d_z_y, _J.d_z, cv::DataType<float>::type, 0, 1, 3);
+  cv::Sobel(_J.d_x, H.d_x_y, cv::DataType<float>::type, 0, 1, 3);
+  cv::Sobel(_J.d_y, H.d_y_y, cv::DataType<float>::type, 0, 1, 3);
+  cv::Sobel(_J.d_z, H.d_z_y, cv::DataType<float>::type, 0, 1, 3);
 
   // safe the hessians if compiled in debug mode
-  assert(cv::imwrite("/tmp/d_y_x.jpg", H.d_y_x * 10 + 100));
+  assert(cv::imwrite("/tmp/d_x_y.jpg", H.d_x_y * 10 + 100));
   assert(cv::imwrite("/tmp/d_y_y.jpg", H.d_y_y * 10 + 100));
-  assert(cv::imwrite("/tmp/d_y_theta.jpg", H.d_y_z * 10 + 100));
+  assert(cv::imwrite("/tmp/d_theta_y.jpg", H.d_z_y * 10 + 100));
 
   // second derivative to theta
   H.d_x_z = _angular_derivative(_J.d_x, _center);
@@ -345,8 +346,8 @@ _init_hessian(const jacobian_data& _J, const Eigen::Vector2i& _center) {
   H.d_z_z = _angular_derivative(_J.d_z, _center);
 
   // safe the hessians if compiled in debug mode
-  assert(cv::imwrite("/tmp/d_theta_x.jpg", H.d_z_x * 10 + 100));
-  assert(cv::imwrite("/tmp/d_theta_y.jpg", H.d_z_y * 10 + 100));
+  assert(cv::imwrite("/tmp/d_x_theta.jpg", H.d_x_z * 10 + 100));
+  assert(cv::imwrite("/tmp/d_y_theta.jpg", H.d_y_z * 10 + 100));
   assert(cv::imwrite("/tmp/d_theta_theta.jpg", H.d_z_z * 10 + 100));
 
   return H;
@@ -581,10 +582,10 @@ pose_gradient::get_cost(const pose& _se2, jacobian* _J, hessian* _H) const {
 
       // J and H are optional
       if (_J)
-        *_J += data_.J.get(k_cell(1), k_cell(0));
+        *_J -= data_.J.get(k_cell(1), k_cell(0));
 
-      if (_H)
-        *_H += data_.H.get(k_cell(1), k_cell(0));
+      if (_H) 
+        *_H -= data_.H.get(k_cell(1), k_cell(0));
     }
   }
 
@@ -593,11 +594,21 @@ pose_gradient::get_cost(const pose& _se2, jacobian* _J, hessian* _H) const {
   Eigen::Matrix3d rot = m_to_k.matrix();
   rot(0, 2) = 0;
   rot(1, 2) = 0;
+  // std::cout << "rot\n" << rot << std::endl;
   if (_J)
     *_J = rot * *_J;
 
-  if (_H)
-    *_H = rot * *_H;
+  if (_H){
+    // std::cout << "H\n" << *_H << std::endl;
+    hessian h1 = *_H;
+    hessian h2 = _H->transpose();
+    *_H = (h1 + h2) * 0.5;
+    
+    // std::cout << "H sym\n" << *_H << std::endl;
+
+
+    *_H = rot.transpose() * *_H * rot;
+  }
 
   return sum;
 }

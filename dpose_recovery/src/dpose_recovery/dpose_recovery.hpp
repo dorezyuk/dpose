@@ -6,9 +6,12 @@
 #include <nav_core/recovery_behavior.h>
 
 #include <IpTNLP.hpp>
+#include <IpIpoptApplication.hpp>
+
 #include <Eigen/Dense>
 
 #include <cmath>
+#include <vector>
 
 namespace dpose_recovery {
 namespace internal {
@@ -142,6 +145,7 @@ private:
   std::vector<pose_gradient::hessian> H_hat;
   std::vector<Eigen::Matrix<Number, 3, 2>> C_hat;
   std::vector<Eigen::Matrix<Number, 2, 2>> D_hat;
+  std::vector<Eigen::Vector2d> u;
 
 
   Number cost;
@@ -169,6 +173,8 @@ struct DposeRecovery : public nav_core::RecoveryBehavior {
 private:
   tf2_ros::Buffer *tf_;
   Map *map_;
+  Ipopt::SmartPtr<Ipopt::IpoptApplication> solver_;
+  Ipopt::SmartPtr<Ipopt::TNLP> problem_;
 };
 
 }  // namespace dpose_recovery

@@ -1,5 +1,7 @@
 #include <dpose_recovery/dpose_recovery.hpp>
 
+#include <pluginlib/class_list_macros.hpp>
+
 #include <cassert>
 
 namespace dpose_recovery {
@@ -25,7 +27,8 @@ Problem::Problem(costmap_2d::LayeredCostmap &_lcm, const Parameter &_our_param,
     H(_our_param.steps),
     H_hat(_our_param.steps),
     C_hat(_our_param.steps),
-    D_hat(_our_param.steps) {}
+    D_hat(_our_param.steps),
+    u(_our_param.steps) {}
 
 bool
 Problem::get_nlp_info(Index &n, Index &m, Index &nnz_jac_g, Index &nnz_h_lag,
@@ -241,8 +244,8 @@ Problem::eval_h(Index n, const Number *u, bool new_u, Number obj_factor,
     values[++ww] = hess(1, 1);  // ww is 2
 
     for (size_t rr = 1; rr != param_.steps; ++rr) {
-      uu = ww;           
-      ww += (rr * 2) + 1; 
+      uu = ww;
+      ww += (rr * 2) + 1;
       for (size_t cc = 0; cc != rr; ++cc) {
         T_tilde_rr = T.at(rr) - R_hat.at(rr);
         T_tilde_cc = T.at(cc) - R_hat.at(cc);
@@ -283,7 +286,11 @@ Problem::finalize_solution(SolverReturn status, Index n, const Number *x,
                            const Number *z_L, const Number *z_U, Index m,
                            const Number *g, const Number *lambda,
                            Number obj_value, const IpoptData *ip_data,
-                           IpoptCalculatedQuantities *ip_cq){};
+                           IpoptCalculatedQuantities *ip_cq) {
+  // save x
+  for (size_t uu = 0, nn = 0; uu != param_.steps; ++uu, nn += 2)
+    u.at(uu) << x[nn], x[nn + 1];
+};
 }  // namespace internal
 
 void
@@ -291,8 +298,44 @@ DposeRecovery::initialize(std::string _name, tf2_ros::Buffer *_tf,
                           Map *_global_map, Map *_local_map) {
   tf_ = _tf;
   map_ = _local_map;
+  // todo set params
+  internal::Problem::Parameter param;
+  dpose_core::pose_gradient::parameter param2;
+
+  problem_ = new internal::Problem(*map_->getLayeredCostmap(), param, param2);
+  solver_ = IpoptApplicationFactory();
+
+  solver_->Options()->SetNumericValue("tol", 1e-7);
+  solver_->Options()->SetStringValue("mu_strategy", "adaptive");
+  solver_->Options()->SetStringValue("output_file", "ipopt.out");
+
+  // Initialize the IpoptApplication and process the options
+  auto status = solver_->Initialize();
+  if (status != Ipopt::Solve_Succeeded) {
+    std::cout << std::endl
+              << std::endl
+              << "*** Error during initialization!" << std::endl;
+    return;
+  }
 }
 
 void
-DposeRecovery::runBehavior() {}
+DposeRecovery::runBehavior() {
+  auto status = solver_->OptimizeTNLP(problem_);
+
+  if (status == Ipopt::Solve_Succeeded) {
+    std::cout << std::endl
+              << std::endl
+              << "*** The problem solved!" << std::endl;
+  }
+  else {
+    std::cout << std::endl
+              << std::endl
+              << "*** The problem FAILED!" << std::endl;
+  }
+}
+
 }  // namespace dpose_recovery
+
+PLUGINLIB_EXPORT_CLASS(dpose_recovery::DposeRecovery,
+                       nav_core::RecoveryBehavior);

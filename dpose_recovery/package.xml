@@ -18,5 +18,8 @@
   <depend>coinor-libipopt-dev</depend>
 
   <test_depend>rostest</test_depend>
+  <export>
+    <nav_core plugin="${prefix}/plugin.xml" />
+  </export>
 
 </package>

@@ -130,6 +130,16 @@ struct Problem : public TNLP {
                     const IpoptData *ip_data,
                     IpoptCalculatedQuantities *ip_cq) override;
 
+  inline const std::vector<Eigen::Vector2d>&
+  get_u() const noexcept {
+    return u_best;
+  }
+
+  inline const Number& 
+  get_cost() const noexcept {
+    return cost_best;
+  }
+
 private:
   void
   on_new_u(Index n, const Number *u);
@@ -142,9 +152,10 @@ private:
   std::vector<pose_gradient::hessian> H_hat;
   std::vector<Eigen::Matrix<Number, 3, 2>> C_hat;
   std::vector<Eigen::Matrix<Number, 2, 2>> D_hat;
-  std::vector<Eigen::Vector2d> u;
+  std::vector<Eigen::Vector2d> u_best;
 
   Number cost;
+  Number cost_best;
 
   pose_gradient pg_;
   Eigen::Vector3d x0_;
@@ -171,6 +182,9 @@ private:
   Map *map_;
   Ipopt::SmartPtr<Ipopt::IpoptApplication> solver_;
   Ipopt::SmartPtr<Ipopt::TNLP> problem_;
+
+  ros::Publisher pose_array_;
+  ros::Publisher cmd_vel_;
 };
 
 }  // namespace dpose_recovery

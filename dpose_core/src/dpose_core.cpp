@@ -341,9 +341,9 @@ _init_hessian(const cost_data& _data, const jacobian_data& _J, const Eigen::Vect
   assert(cv::imwrite("/tmp/d_theta_y.jpg", H.d_z_y * 10 + 100));
 
   // second derivative to theta
-  H.d_x_z = _angular_derivative(_J.d_x, _center);
-  H.d_y_z = _angular_derivative(_J.d_y, _center);
-  H.d_z_z = _angular_derivative(_J.d_z, _center);
+  H.d_x_z = _angular_derivative(_J.d_x, _center) * 1. / 64.;
+  H.d_y_z = _angular_derivative(_J.d_y, _center) * 1. / 64.;
+  H.d_z_z = _angular_derivative(_J.d_z, _center) * 1. / 64.;
 
   // safe the hessians if compiled in debug mode
   assert(cv::imwrite("/tmp/d_x_theta.jpg", H.d_x_z * 10 + 100));

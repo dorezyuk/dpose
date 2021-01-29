@@ -1,6 +1,9 @@
 #include <dpose_recovery/dpose_recovery.hpp>
 
 #include <pluginlib/class_list_macros.hpp>
+#include <geometry_msgs/Pose.h>
+#include <geometry_msgs/PoseArray.h>
+#include <geometry_msgs/Twist.h>
 #include <tf2/utils.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
 
@@ -30,7 +33,7 @@ Problem::Problem(costmap_2d::LayeredCostmap &_lcm, const Parameter &_our_param,
     H_hat(_our_param.steps),
     C_hat(_our_param.steps),
     D_hat(_our_param.steps),
-    u(_our_param.steps) {}
+    u_best(_our_param.steps) {}
 
 bool
 Problem::get_nlp_info(Index &n, Index &m, Index &nnz_jac_g, Index &nnz_h_lag,
@@ -76,6 +79,7 @@ Problem::get_starting_point(Index n, bool init_x, Number *x, bool init_z,
   for (Index nn = 0; nn != n; ++nn)
     x[nn] = 0;
 
+  cost_best = std::numeric_limits<Number>::max();
   return true;
 };
 
@@ -93,10 +97,10 @@ void
 Problem::on_new_u(Index n, const Number *u) {
   using state_t = Eigen::Vector3d;
 
-  for (size_t nn = 0; nn != n; ++nn) {
-    std::cout << "(" << u[nn] << ", " << u[nn + 1] << ")" << std::endl;
-    ++nn;
-  }
+  // for (size_t nn = 0; nn != n; ++nn) {
+  //   std::cout << "(" << u[nn] << ", " << u[nn + 1] << ")" << std::endl;
+  //   ++nn;
+  // }
 
   // define the states
   state_t prev = x0_;
@@ -114,7 +118,7 @@ Problem::on_new_u(Index n, const Number *u) {
 
     // get the state x_n = A x_{n-1} + B u_n
     curr = diff_drive::step(prev, u[jj], u[jj + 1]);
-    ROS_INFO_STREAM("curr " << curr.transpose());
+    // ROS_INFO_STREAM("curr " << curr.transpose());
 
     // find J_ii and H_ii. We abuse the J_hat and H_hat as dummies.
     cost += pg_.get_cost(curr, &J_hat.at(ii), &H_hat.at(ii));
@@ -122,6 +126,12 @@ Problem::on_new_u(Index n, const Number *u) {
     // ROS_INFO_STREAM("H\n" << H_hat.at(ii));
 
     prev = curr;
+  }
+  if (cost < cost_best) {
+    // save x
+    for (size_t uu = 0, nn = 0; uu != param_.steps; ++uu, nn += 2)
+      u_best.at(uu) << u[nn], u[nn + 1];
+    cost_best = cost;
   }
 
   ROS_WARN_STREAM("cost " << cost);
@@ -183,7 +193,7 @@ Problem::eval_grad_f(Index n, const Number *u, bool new_u, Number *grad_f) {
   grad_f[dd] = grad(0);
   grad_f[++dd] = grad(1);
 
-  std::cout << "grad ii " << 0 << ": " << grad.transpose() << std::endl;
+  // std::cout << "grad ii " << 0 << ": " << grad.transpose() << std::endl;
 
   for (size_t ii = 1; ii != param_.steps; ++ii) {
     T_tilde = T.at(ii) - R_hat.at(ii);
@@ -193,15 +203,15 @@ Problem::eval_grad_f(Index n, const Number *u, bool new_u, Number *grad_f) {
     grad_f[++dd] = grad(0);
     grad_f[++dd] = grad(1);
 
-    std::cout << "grad ii " << ii << ": " << grad.transpose() << std::endl;
+    // std::cout << "grad ii " << ii << ": " << grad.transpose() << std::endl;
   }
 
   // make sure that we have reached the end
   assert(++dd == n && "failed to populate the gradient");
 
-  for (size_t ii = 0; ii != n; ++ii)
-    std::cout << grad_f[ii] << ", ";
-  std::cout << std::endl;
+  // for (size_t ii = 0; ii != n; ++ii)
+  //   std::cout << grad_f[ii] << ", ";
+  // std::cout << std::endl;
   return true;
 };
 
@@ -260,11 +270,11 @@ Problem::eval_h(Index n, const Number *u, bool new_u, Number obj_factor,
            C_hat_diff.transpose() * T_tilde_rr +
            D_hat.back();
     // clang-format on
-    std::cout << "J_hat.back()\n" << J_hat.back() << std::endl;
-    std::cout << "H_hat.back()\n" << H_hat.back() << std::endl;
-    std::cout << "T_tilde_rr\n" << T_tilde_rr << std::endl;
-    std::cout << "C_hat_diff\n" << C_hat_diff << std::endl;
-    std::cout << "D_hat.back()\n" << D_hat.back() << std::endl;
+    // std::cout << "J_hat.back()\n" << J_hat.back() << std::endl;
+    // std::cout << "H_hat.back()\n" << H_hat.back() << std::endl;
+    // std::cout << "T_tilde_rr\n" << T_tilde_rr << std::endl;
+    // std::cout << "C_hat_diff\n" << C_hat_diff << std::endl;
+    // std::cout << "D_hat.back()\n" << D_hat.back() << std::endl;
 
     values[uu] = hess(0, 0);
     values[++ww] = hess(1, 0);  // ww is 1
@@ -304,14 +314,14 @@ Problem::eval_h(Index n, const Number *u, bool new_u, Number obj_factor,
       values[++ww] = hess(1, 0);
       values[++ww] = hess(1, 1);
     }
-    const auto n_size = little_gauss(n);
-    size_t nn = 0;
-    for (size_t rr = 0; rr != n; ++rr) {
-      for (size_t cc = 0; cc <= rr; ++cc, ++nn) {
-        std::cout << values[nn] << ", ";
-      }
-      std::cout << std::endl;
-    }
+    // const auto n_size = little_gauss(n);
+    // size_t nn = 0;
+    // for (size_t rr = 0; rr != n; ++rr) {
+    //   for (size_t cc = 0; cc <= rr; ++cc, ++nn) {
+    //     std::cout << values[nn] << ", ";
+    //   }
+    //   std::cout << std::endl;
+    // }
   }
 
   return true;
@@ -325,9 +335,28 @@ Problem::finalize_solution(SolverReturn status, Index n, const Number *x,
                            IpoptCalculatedQuantities *ip_cq) {
   // save x
   for (size_t uu = 0, nn = 0; uu != param_.steps; ++uu, nn += 2)
-    u.at(uu) << x[nn], x[nn + 1];
+    u_best.at(uu) << x[nn], x[nn + 1];
 };
 }  // namespace internal
+
+inline void
+load_ipopt(Ipopt::SmartPtr<Ipopt::IpoptApplication> &_solver,
+           ros::NodeHandle &_nh, const std::string &_name, int _default) {
+  _solver->Options()->SetIntegerValue(_name, _nh.param(_name, _default));
+}
+
+inline void
+load_ipopt(Ipopt::SmartPtr<Ipopt::IpoptApplication> &_solver,
+           ros::NodeHandle &_nh, const std::string &_name, double _default) {
+  _solver->Options()->SetNumericValue(_name, _nh.param(_name, _default));
+}
+
+inline void
+load_ipopt(Ipopt::SmartPtr<Ipopt::IpoptApplication> &_solver,
+           ros::NodeHandle &_nh, const std::string &_name,
+           const std::string &_default) {
+  _solver->Options()->SetStringValue(_name, _nh.param(_name, _default));
+}
 
 void
 DposeRecovery::initialize(std::string _name, tf2_ros::Buffer *_tf,
@@ -335,76 +364,100 @@ DposeRecovery::initialize(std::string _name, tf2_ros::Buffer *_tf,
   tf_ = _tf;
   map_ = _local_map;
   internal::Problem::Parameter param;
-  param.steps = 5;
+  ros::NodeHandle nh("~" + _name);
+
+  param.steps = nh.param("steps", 10);
   param.dim_u = 2;
-  param.u_lower = {-2, -0.1};
-  param.u_upper = {2, 0.1};
+
+  param.u_lower = {-2, -0.2};
+  param.u_upper = {2, 0.2};
   dpose_core::pose_gradient::parameter param2;
   param2.generate_hessian = true;
-  param2.padding = 5;
+  param2.padding = nh.param("padding", 5);
 
   problem_ = new internal::Problem(*map_->getLayeredCostmap(), param, param2);
   solver_ = IpoptApplicationFactory();
 
-  solver_->Options()->SetNumericValue("tol", 1e-7);
-  solver_->Options()->SetStringValue("mu_strategy", "adaptive");
-  solver_->Options()->SetStringValue("output_file", "/tmp/ipopt.out");
-  // solver_->Options()->SetStringValue("derivative_test", "first-order");
-  // solver_->Options()->SetIntegerValue("print_level", 10);
-  solver_->Options()->SetIntegerValue("max_iter", 2);
-  solver_->Options()->SetIntegerValue("max_cpu_time", 1);
+  load_ipopt(solver_, nh, "tol", 5.);
+  load_ipopt(solver_, nh, "mu_strategy", "adaptive");
+  load_ipopt(solver_, nh, "output_file", "/tmp/ipopt.out");
+  load_ipopt(solver_, nh, "max_iter", 5);
+  load_ipopt(solver_, nh, "max_cpu_time", .2);
 
-  solver_->Options()->SetStringValue("print_user_options", "yes");
-
-  // solver_->Options()->SetStringValue("option_file_name", "/tmp/ipopt.opt");
+  if (nh.param("hessian_approximation", false))
+    solver_->Options()->SetStringValue("hessian_approximation",
+                                       "limited-memory");
 
   // Initialize the IpoptApplication and process the options
   auto status = solver_->Initialize();
-  if (status != Ipopt::Solve_Succeeded) {
-    std::cout << std::endl
-              << std::endl
-              << "*** Error during initialization!" << std::endl;
-    return;
-  }
+  if (status != Ipopt::Solve_Succeeded)
+    throw std::runtime_error("ipopt-initialization failed");
+
+  pose_array_ = nh.advertise<geometry_msgs::PoseArray>("poses", 1);
+  cmd_vel_ = nh.advertise<geometry_msgs::Twist>("/cmd_vel", 1);
 }
 
 void
 DposeRecovery::runBehavior() {
   auto problem = dynamic_cast<internal::Problem *>(problem_.operator->());
   geometry_msgs::PoseStamped robot_pose;
-  if (!map_->getRobotPose(robot_pose))
-    ROS_WARN("Failed to get the robot pose");
 
-  ROS_INFO_STREAM("robot pose " << robot_pose);
-
-  auto cm = map_->getLayeredCostmap()->getCostmap();
+  const auto cm = map_->getLayeredCostmap()->getCostmap();
   const auto origin_x = cm->getOriginX();
   const auto origin_y = cm->getOriginY();
   const auto res = cm->getResolution();
 
-  ROS_INFO_STREAM("origin_x " << origin_x);
-  ROS_INFO_STREAM("origin_y " << origin_y);
+  const auto end_time = ros::Time::now() + ros::Duration(10);
+  ros::Rate spin_rate(10);
 
-  dpose_core::pose_gradient::pose pose;
-  pose.x() = (robot_pose.pose.position.x - origin_x) / res;
-  pose.y() = (robot_pose.pose.position.y - origin_y) / res;
-  pose.z() = tf2::getYaw(robot_pose.pose.orientation);
+  solver_->Options()->SetStringValue("warm_start_init_point", "no");
 
-  ROS_INFO_STREAM("ORIGIN SET TO " << pose.transpose());
-  problem->set_origin(pose);
+  while (ros::Time::now() < end_time) {
+    if (!map_->getRobotPose(robot_pose))
+      ROS_WARN("Failed to get the robot pose");
 
-  ROS_INFO_STREAM("Solving the problem");
-  auto status = solver_->OptimizeTNLP(problem_);
+    dpose_core::pose_gradient::pose pose;
+    pose.x() = (robot_pose.pose.position.x - origin_x) / res;
+    pose.y() = (robot_pose.pose.position.y - origin_y) / res;
+    pose.z() = tf2::getYaw(robot_pose.pose.orientation);
 
-  if (status == Ipopt::Solve_Succeeded) {
-    std::cout << std::endl
-              << std::endl
-              << "*** The problem solved!" << std::endl;
-  }
-  else {
-    std::cout << std::endl
-              << std::endl
-              << "*** The problem FAILED!" << std::endl;
+    problem->set_origin(pose);
+
+    auto status = solver_->OptimizeTNLP(problem_);
+
+    const auto &u = problem->get_u();
+    std::vector<Eigen::Vector3d> x(u.size() + 1);
+
+    x.front() = pose;
+    for (size_t ii = 0; ii != u.size(); ++ii)
+      x.at(ii + 1) =
+          internal::diff_drive::step(x.at(ii), u.at(ii)(0), u.at(ii)(1));
+
+    // convert to array
+    geometry_msgs::PoseArray pose_array;
+    tf2::Quaternion q;
+    pose_array.poses.resize(x.size());
+    pose_array.header.frame_id = robot_pose.header.frame_id;
+
+    for (size_t ii = 0; ii != x.size(); ++ii) {
+      pose_array.poses.at(ii).position.x = x.at(ii)(0) * res + origin_x;
+      pose_array.poses.at(ii).position.y = x.at(ii)(1) * res + origin_y;
+      q.setRPY(0, 0, x.at(ii).z());
+      pose_array.poses.at(ii).orientation = tf2::toMsg(q);
+    }
+
+    pose_array_.publish(pose_array);
+
+    // convet to twist
+    geometry_msgs::Twist cmd_vel;
+    cmd_vel.linear.x = u.front().x() * res;
+    cmd_vel.angular.z = u.front().y();
+    cmd_vel_.publish(cmd_vel);
+
+    solver_->Options()->SetStringValue("warm_start_init_point", "yes");
+    if(problem->get_cost() < 1)
+      break;
+    spin_rate.sleep();
   }
 }
 

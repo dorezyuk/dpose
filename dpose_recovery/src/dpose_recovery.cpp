@@ -5,6 +5,8 @@
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
 
 #include <cassert>
+#include <iterator>
+#include <string>
 
 namespace dpose_recovery {
 namespace internal {
@@ -237,7 +239,7 @@ Problem::eval_h(Index n, const Number *u, bool new_u, Number obj_factor,
         jCol[idx] = col;
       }
 
-    assert(idx = nele_hess && "wrong index");
+    assert(idx == nele_hess && "wrong index");
   }
   else {
     // populate the hessian
@@ -258,9 +260,15 @@ Problem::eval_h(Index n, const Number *u, bool new_u, Number obj_factor,
            C_hat_diff.transpose() * T_tilde_rr +
            D_hat.back();
     // clang-format on
-    values[uu] = -hess(0, 0);
-    values[++ww] = -hess(1, 0);  // ww is 1
-    values[++ww] = -hess(1, 1);  // ww is 2
+    std::cout << "J_hat.back()\n" << J_hat.back() << std::endl;
+    std::cout << "H_hat.back()\n" << H_hat.back() << std::endl;
+    std::cout << "T_tilde_rr\n" << T_tilde_rr << std::endl;
+    std::cout << "C_hat_diff\n" << C_hat_diff << std::endl;
+    std::cout << "D_hat.back()\n" << D_hat.back() << std::endl;
+
+    values[uu] = hess(0, 0);
+    values[++ww] = hess(1, 0);  // ww is 1
+    values[++ww] = hess(1, 1);  // ww is 2
 
     for (size_t rr = 1; rr != param_.steps; ++rr) {
       uu = ww;
@@ -277,10 +285,10 @@ Problem::eval_h(Index n, const Number *u, bool new_u, Number obj_factor,
         // clang-format on
 
         // copy the hess-values into the destination
-        values[++uu] = -hess(0, 0);
-        values[++uu] = -hess(0, 1);
-        values[++ww] = -hess(1, 0);
-        values[++ww] = -hess(1, 1);
+        values[++uu] = hess(0, 0);
+        values[++uu] = hess(0, 1);
+        values[++ww] = hess(1, 0);
+        values[++ww] = hess(1, 1);
       }
       // last element is "special" since we just need three out of four values
       T_tilde_rr = T.at(rr) - R_hat.at(rr);
@@ -292,9 +300,9 @@ Problem::eval_h(Index n, const Number *u, bool new_u, Number obj_factor,
               (D_hat.back() - D_hat.at(rr - 1));
       // clang-format on
 
-      values[++uu] = -hess(0, 0);
-      values[++ww] = -hess(1, 0);
-      values[++ww] = -hess(1, 1);
+      values[++uu] = hess(0, 0);
+      values[++ww] = hess(1, 0);
+      values[++ww] = hess(1, 1);
     }
     const auto n_size = little_gauss(n);
     size_t nn = 0;
@@ -327,7 +335,7 @@ DposeRecovery::initialize(std::string _name, tf2_ros::Buffer *_tf,
   tf_ = _tf;
   map_ = _local_map;
   internal::Problem::Parameter param;
-  param.steps = 10;
+  param.steps = 5;
   param.dim_u = 2;
   param.u_lower = {-2, -0.1};
   param.u_upper = {2, 0.1};

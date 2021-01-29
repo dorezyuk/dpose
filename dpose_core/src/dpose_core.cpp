@@ -303,8 +303,8 @@ jacobian_data
 _init_jacobian(const cost_data& _data) {
   jacobian_data J;
   // get our three derivatives
-  cv::Sobel(_data.cost, J.d_x, cv::DataType<float>::type, 1, 0, 3);
-  cv::Sobel(_data.cost, J.d_y, cv::DataType<float>::type, 0, 1, 3);
+  cv::Sobel(_data.cost, J.d_x, cv::DataType<float>::type, 1, 0, 5, 1./ 64.);
+  cv::Sobel(_data.cost, J.d_y, cv::DataType<float>::type, 0, 1, 5, 1./ 64.);
   J.d_z = _angular_derivative(_data.cost, _data.center);
 
   // safe the jacobians if compiled in debug mode
@@ -317,13 +317,13 @@ _init_jacobian(const cost_data& _data) {
 
 /// @brief will generate the hessian data based on the jacobian data
 hessian_data
-_init_hessian(const jacobian_data& _J, const Eigen::Vector2i& _center) {
+_init_hessian(const cost_data& _data, const jacobian_data& _J, const Eigen::Vector2i& _center) {
   hessian_data H;
   // todo this is crap
   // second derivative to x
-  cv::Sobel(_J.d_x, H.d_x_x, cv::DataType<float>::type, 1, 0, 3);
-  cv::Sobel(_J.d_y, H.d_y_x, cv::DataType<float>::type, 1, 0, 3);
-  cv::Sobel(_J.d_z, H.d_z_x, cv::DataType<float>::type, 1, 0, 3);
+  cv::Sobel(_J.d_x, H.d_x_x, cv::DataType<float>::type, 1, 0, 5, 1./ 4096.);
+  cv::Sobel(_J.d_y, H.d_y_x, cv::DataType<float>::type, 1, 0, 5, 1./ 4096.);
+  cv::Sobel(_J.d_z, H.d_z_x, cv::DataType<float>::type, 1, 0, 5, 1./ 4096.);
 
   // safe the hessians if compiled in debug mode
   assert(cv::imwrite("/tmp/d_x_x.jpg", H.d_x_x * 10 + 100));
@@ -331,9 +331,9 @@ _init_hessian(const jacobian_data& _J, const Eigen::Vector2i& _center) {
   assert(cv::imwrite("/tmp/d_theta_x.jpg", H.d_z_x * 10 + 100));
 
   // second derivative to y
-  cv::Sobel(_J.d_x, H.d_x_y, cv::DataType<float>::type, 0, 1, 3);
-  cv::Sobel(_J.d_y, H.d_y_y, cv::DataType<float>::type, 0, 1, 3);
-  cv::Sobel(_J.d_z, H.d_z_y, cv::DataType<float>::type, 0, 1, 3);
+  cv::Sobel(_J.d_x, H.d_x_y, cv::DataType<float>::type, 0, 1, 5, 1./ 4096.);
+  cv::Sobel(_J.d_y, H.d_y_y, cv::DataType<float>::type, 0, 1, 5, 1./ 4096.);
+  cv::Sobel(_J.d_z, H.d_z_y, cv::DataType<float>::type, 0, 1, 5, 1./ 4096.);
 
   // safe the hessians if compiled in debug mode
   assert(cv::imwrite("/tmp/d_x_y.jpg", H.d_x_y * 10 + 100));
@@ -381,7 +381,7 @@ init_data(const polygon& _footprint, const parameter& _param) {
 
   // the hessian data might be optional
   if (_param.generate_hessian)
-    out.H = _init_hessian(out.J, out.core.center);
+    out.H = _init_hessian(out.core, out.J, out.core.center);
 
   return out;
 }
@@ -584,6 +584,9 @@ pose_gradient::get_cost(const pose& _se2, jacobian* _J, hessian* _H) const {
       if (_J)
         *_J -= data_.J.get(k_cell(1), k_cell(0));
 
+      // std::cout << k_cell << std::endl;
+      // std::cout << data_.J.get(k_cell(1), k_cell(0)).transpose() << std::endl << std::endl;
+      // std::cout << data_.H.get(k_cell(1), k_cell(0)) << std::endl << std::endl;
       if (_H) 
         *_H -= data_.H.get(k_cell(1), k_cell(0));
     }
@@ -595,7 +598,8 @@ pose_gradient::get_cost(const pose& _se2, jacobian* _J, hessian* _H) const {
   rot(0, 2) = 0;
   rot(1, 2) = 0;
   // std::cout << "rot\n" << rot << std::endl;
-  if (_J)
+    // std::cout << "J\n" << _J->transpose() << std::endl;
+  if (_J) 
     *_J = rot * *_J;
 
   if (_H){
@@ -605,7 +609,6 @@ pose_gradient::get_cost(const pose& _se2, jacobian* _J, hessian* _H) const {
     *_H = (h1 + h2) * 0.5;
     
     // std::cout << "H sym\n" << *_H << std::endl;
-
 
     *_H = rot.transpose() * *_H * rot;
   }

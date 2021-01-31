@@ -25,6 +25,7 @@
 #define DPOSE_GOAL_TOLERANCE__DPOSE_GOAL_TOLERANCE__HPP
 
 #include <dpose_core/dpose_core.hpp>
+#include <dpose_core/dpose_costmap.hpp>
 
 #include <gpp_interface/pre_planning_interface.hpp>
 #include <angles/angles.h>
@@ -156,7 +157,14 @@ public:
   }
 };
 
-using dpose_core::pose_gradient;
+using namespace dpose_core;
+
+/// @brief returns all lethal cells within the _bounds
+/// @param _map the costmap to search
+/// @param _bounds the bounds of the search
+cell_vector
+lethal_cells_within(const costmap_2d::Costmap2D& _map,
+                    const rectangle<int>& _bounds);
 
 /**
  * @brief gradient decent optimizer for the pose_gradient.
@@ -177,12 +185,17 @@ struct gradient_decent {
     tolerance tol;         ///< maximal distance from _start
   };
 
-
   gradient_decent() = default;
   explicit gradient_decent(parameter&& _param) noexcept;
 
   std::pair<float, Eigen::Vector3d>
-  solve(const pose_gradient& _pg, const Eigen::Vector3d& _start) const;
+  solve(const pose_gradient& _pg, const pose_gradient::pose& _start,
+        const cell_vector& _cells) const;
+
+  inline const parameter&
+  get_param() const noexcept {
+    return param_;
+  }
 
 private:
   parameter param_;  ///< parameterization for the optimization

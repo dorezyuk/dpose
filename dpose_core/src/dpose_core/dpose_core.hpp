@@ -21,24 +21,35 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  * SOFTWARE.
  */
-
 #ifndef DPOSE_CORE__DPOSE_CORE__HPP
 #define DPOSE_CORE__DPOSE_CORE__HPP
-
-#include <angles/angles.h>
-#include <costmap_2d/costmap_2d.h>
-#include <costmap_2d/layered_costmap.h>
-#include <geometry_msgs/Point.h>
 
 #include <opencv2/opencv.hpp>
 
 #include <Eigen/Dense>
 
-#include <memory>
-#include <utility>
 #include <vector>
 
 namespace dpose_core {
+
+/// @brief a closed rectangle (hence 5 columns)
+template <typename _T>
+using rectangle = Eigen::Matrix<_T, 2, 5>;
+
+/// @brief constructs a rectangle with the given width and height
+/// @param w width of the rectangle
+/// @param h height of the rectangle
+template <typename _T>
+inline rectangle<_T>
+to_rectangle(const _T& w, const _T& h) noexcept {
+  rectangle<_T> box;
+  // clang-format off
+  box << 0, w, w, 0, 0,
+         0, 0, h, h, 0;
+  // clang-format on
+  return box;
+}
+
 namespace internal {
 
 /// @brief struct holding the "core" data - just cost matrix and center cell
@@ -129,61 +140,41 @@ init_data(const polygon& _footprint, const parameter& _param);
 
 }  // namespace internal
 
-namespace cm = costmap_2d;
-
-/// @brief ros-specific polygon definition
-using polygon_msg = std::vector<geometry_msgs::Point>;
+using cell = Eigen::Vector2i;
+using cell_vector = std::vector<cell>;
 
 /**
  * @brief computes a pose-gradient from the given costmap
  *
- * This is most-likely the entry-point for this lib.
- * Use pose_gradient::get_cost to obtain the cost and the gradient.
- * The input pose is must be in the global frame of the provided costmap.
- *
- * @code{cpp}
- * // include this header
- * #include <dpose_core/dpose_core.hpp>
- *
- * // construct an instance from your costmap and the footprint
- * dpose_core::pose_gradient pg(my_costmap, my_footprint);
- *
- * // get the gradient for a pose
- * Eigen::Vector3d grad;
- * const auto res = pg.get_cost(my_pose, grad, nullptr);
- * @endcode
- *
- * You can use this class for your own optimization, or reuse the
- * gradient-decent solver below.
- *
- * The output is in the global frame.
  * The input (and output) is in cell-domain (not metric).
  */
 struct pose_gradient {
   using parameter = internal::parameter;
+  using polygon = internal::polygon;
 
   // the three arguments for get_pose
   using jacobian = internal::jacobian_data::jacobian;
   using hessian = internal::hessian_data::hessian;
   using pose = Eigen::Vector3d;
 
+  /// @brief sets up internal data based on _footprint and _param.
+  /// @see internal::init_data for details.
+  pose_gradient(const polygon& _footprint, const parameter& _param);
   pose_gradient() = default;
-  pose_gradient(costmap_2d::Costmap2D& _cm, const polygon_msg& _footprint,
-                const parameter& _param);
-  pose_gradient(costmap_2d::LayeredCostmap& _lcm, const parameter& _param);
 
   /// @brief returns the cost for the given se2 pose
   /// @param[in] _se2 pose of interest. should be in the global frame.
   /// @param[out] _J optional jacobian. will be ignored if nullptr
   /// @param[out] _H optional hessian. will be ignored if nullptr
   float
-  get_cost(const pose& _se2, jacobian* _J, hessian* _H) const;
+  get_cost(const pose& _se2, cell_vector::const_iterator _begin,
+           cell_vector::const_iterator _end, jacobian* _J, hessian* _H) const;
+
+  rectangle<int>
+  get_bounding_box() const;
 
 private:
   internal::data data_;
-  // promise not to alter the costmap, but this class does not have a
-  // const-correctness concept
-  mutable costmap_2d::Costmap2D* cm_ = nullptr;
 };
 
 }  // namespace dpose_core

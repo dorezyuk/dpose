@@ -21,7 +21,6 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  * SOFTWARE.
  */
-
 #include <dpose_core/dpose_core.hpp>
 
 #include <opencv2/imgproc.hpp>
@@ -38,25 +37,6 @@
 #include <vector>
 
 namespace dpose_core {
-
-/// @brief a closed rectangle (hence 5 columns)
-template <typename _T>
-using rectangle_type = Eigen::Matrix<_T, 2, 5>;
-
-/// @brief constructs a rectangle with the given width and height
-/// @param w width of the rectangle
-/// @param h height of the rectangle
-template <typename _T>
-rectangle_type<_T>
-to_rectangle(const _T& w, const _T& h) noexcept {
-  rectangle_type<_T> box;
-  // order does not matter that much here
-  // clang-format off
-  box << 0, w, w, 0, 0,
-         0, 0, h, h, 0;
-  // clang-format on
-  return box;
-}
 
 /// @brief contains our open-cv related operations
 namespace internal {
@@ -243,7 +223,7 @@ _mark_gradient(const cell_type& _prev, const cell_type& _curr,
 }
 
 /// @brief generates a rectangle with the size of _cm
-inline rectangle_type<int>
+inline rectangle<int>
 _to_rectangle(const cv::Mat& _cm) noexcept {
   return to_rectangle<int>(_cm.cols, _cm.rows);
 }
@@ -251,7 +231,7 @@ _to_rectangle(const cv::Mat& _cm) noexcept {
 /// @brief returns the max distance from _image's corners to _cell
 inline int
 _max_distance(const cv::Mat& _image, const Eigen::Vector2i& _cell) noexcept {
-  const rectangle_type<int> r = _to_rectangle(_image).colwise() - _cell;
+  const rectangle<int> r = _to_rectangle(_image).colwise() - _cell;
   const Eigen::Matrix<double, 1UL, 5UL> d = r.cast<double>().colwise().norm();
   return static_cast<int>(d.maxCoeff());
 }
@@ -387,111 +367,7 @@ init_data(const polygon& _footprint, const parameter& _param) {
   return out;
 }
 
-data
-_init_data(const costmap_2d::Costmap2D& _cm, const polygon_msg& _footprint,
-           const parameter& _param) {
-  const auto res = _cm.getResolution();
-  if (res <= 0)
-    throw std::runtime_error("resolution must be positive");
-
-  // convert the message to a eigen-polygon
-  polygon cells(2, _footprint.size());
-  for (int cc = 0; cc != cells.cols(); ++cc) {
-    cells(0, cc) = std::round(_footprint.at(cc).x / res);
-    cells(1, cc) = std::round(_footprint.at(cc).y / res);
-  }
-
-  // call the actual impl
-  return init_data(cells, _param);
-}
-
 }  // namespace internal
-
-/// @brief bresenham's raytrace algorithm adjusted from ros
-/// @param _begin begin of the ray
-/// @param _end end of the ray (exclusive)
-std::vector<Eigen::Vector2i>
-_raytrace(const Eigen::Vector2i& _begin, const Eigen::Vector2i& _end) noexcept {
-  // original code under raytraceLine in
-  // https://github.com/ros-planning/navigation/blob/noetic-devel/costmap_2d/include/costmap_2d/costmap_2d.h
-  using pose = Eigen::Vector2i;
-  const pose delta_raw = _end - _begin;
-  const pose delta = delta_raw.array().abs();
-
-  pose::Index row_major, row_minor;
-  const auto den = delta.maxCoeff(&row_major);
-  const auto add = delta.minCoeff(&row_minor);
-
-  const auto size = den;
-
-  assert(size >= 0 && "negative size detected");
-
-  int num = den / 2;
-
-  // setup the increments
-  pose inc_minor = delta_raw.array().sign();
-  pose inc_major = inc_minor;
-
-  // erase the "other" row
-  inc_minor(row_major) = 0;
-  inc_major(row_minor) = 0;
-
-  // allocate space beforehand
-  std::vector<pose> ray(size);
-  pose curr = _begin;
-
-  // bresenham's iteration
-  for (int ii = 0; ii < size; ++ii) {
-    ray.at(ii) = curr;
-
-    num += add;
-    if (num >= den) {
-      num -= den;
-      curr += inc_minor;
-    }
-    curr += inc_major;
-  }
-
-  return ray;
-}
-
-/**
- * @brief interval defined by [min, max].
- *
- * Use interval::extend in order to add values.
- * We will use this structure in order to iterate on a ray defined by
- * its y-value and x_begin and x_end.
- */
-template <typename _T>
-struct interval {
-  interval() :
-      min{std::numeric_limits<_T>::max()},
-      max{std::numeric_limits<_T>::lowest()} {}
-
-  inline void
-  extend(const _T& _v) noexcept {
-    min = std::min(min, _v);
-    max = std::max(max, _v);
-  }
-
-  _T min, max;
-};
-
-using cell_interval = interval<size_t>;
-using cell_rays = std::unordered_map<int, cell_interval>;
-
-/// @brief constructs intervals [x_begin, x_end] for every y value from _rect
-/// @param _rect the rectangle
-cell_rays
-_to_rays(const rectangle_type<int>& _rect) noexcept {
-  cell_rays out;
-  for (int cc = 0; cc != 4; ++cc) {
-    const auto ray = _raytrace(_rect.col(cc), _rect.col(cc + 1));
-    for (const auto& cell : ray)
-      out[cell.y()].extend(cell.x());
-  }
-  return out;
-}
 
 using transform_type = Eigen::Isometry2d;
 
@@ -503,29 +379,21 @@ to_eigen(double _x, double _y, double _yaw) noexcept {
 /// @brief checks if the _box is inside a rectangle starting at (0, 0) and
 /// ending at _max
 inline bool
-is_inside(const Eigen::Vector2d& _max,
-          const rectangle_type<double>& _box) noexcept {
+is_inside(const Eigen::Vector2d& _max, const rectangle<double>& _box) noexcept {
   return (_box.array() >= 0).all() && (_box.row(0).array() < _max(0)).all() &&
          (_box.row(1).array() < _max(1)).all();
 }
 
-pose_gradient::pose_gradient(costmap_2d::Costmap2D& _cm,
-                             const polygon_msg& _footprint,
+pose_gradient::pose_gradient(const polygon& _footprint,
                              const parameter& _param) :
-    data_(internal::_init_data(_cm, _footprint, _param)), cm_(&_cm) {}
-
-pose_gradient::pose_gradient(costmap_2d::LayeredCostmap& _lcm,
-                             const parameter& _param) :
-    pose_gradient(*_lcm.getCostmap(), _lcm.getFootprint(), _param) {}
+    data_(internal::init_data(_footprint, _param)) {}
 
 float
-pose_gradient::get_cost(const pose& _se2, jacobian* _J, hessian* _H) const {
-  using rectangle_d = rectangle_type<double>;
-  using cm_polygon = std::vector<costmap_2d::MapLocation>;
+pose_gradient::get_cost(const pose& _se2, cell_vector::const_iterator _begin,
+                        cell_vector::const_iterator _end, jacobian* _J,
+                        hessian* _H) const {
+  using rectangle_d = rectangle<double>;
   using namespace internal;
-
-  if (!cm_)
-    throw std::runtime_error("no costmap provided");
 
   // note: all computations are done in the cell space.
   // indedices are map (m), baselink (b) and kernel (k).
@@ -540,12 +408,6 @@ pose_gradient::get_cost(const pose& _se2, jacobian* _J, hessian* _H) const {
       (m_to_k * k_kernel_bb).array().round().matrix();
 
   float sum = 0;
-  // the kernel must be inside the costmap, otherwise we give up
-  if (!is_inside({cm_->getSizeInCellsX(), cm_->getSizeInCellsY()}, m_kernel_bb))
-    return sum;
-
-  // convert the kernel to "lines"
-  const cell_rays lines = _to_rays(m_kernel_bb.cast<int>());
 
   // init the output values
   if (_J)
@@ -555,43 +417,26 @@ pose_gradient::get_cost(const pose& _se2, jacobian* _J, hessian* _H) const {
     *_H = hessian::Zero();
 
   const transform_type k_to_m = m_to_k.inverse();
-  // iterate over all lines
-  const auto char_map = cm_->getCharMap();
-  for (const auto& line : lines) {
-    // the interval's max is inclusive, so we increment it
-    const auto end = cm_->getIndex(line.second.max, line.first) + 1;
-    auto index = cm_->getIndex(line.second.min, line.first);
 
-    // iterate over all cells within one line-intervals
-    for (auto x = line.second.min; index != end; ++index, ++x) {
-      // we only want lethal cells
-      if (char_map[index] != costmap_2d::LETHAL_OBSTACLE)
-        continue;
+  for (; _begin != _end; ++_begin) {
+    // convert to the kernel frame
+    const cell k_cell =
+        (k_to_m * _begin->cast<double>()).array().round().cast<int>().matrix();
 
-      // convert to the kernel frame
-      const Eigen::Vector2d m_cell(x, line.first);
-      const Eigen::Vector2i k_cell =
-          (k_to_m * m_cell).array().round().cast<int>().matrix();
+    // check if k_cell is valid
+    if ((k_cell.array() < 0).any() || k_cell(0) >= data_.core.cost.cols ||
+        k_cell(1) >= data_.core.cost.rows)
+      continue;
 
-      // check if k_cell is valid
-      if ((k_cell.array() < 0).any() || k_cell(0) >= data_.core.cost.cols ||
-          k_cell(1) >= data_.core.cost.rows)
-        continue;
+    // update our outputs
+    sum += data_.core.cost.at<float>(k_cell(1), k_cell(0));
 
-      // update our outputs
-      sum += data_.core.cost.at<float>(k_cell(1), k_cell(0));
+    // J and H are optional
+    if (_J)
+      *_J -= data_.J.get(k_cell(1), k_cell(0));
 
-      // J and H are optional
-      if (_J)
-        *_J -= data_.J.get(k_cell(1), k_cell(0));
-
-      // std::cout << k_cell << std::endl;
-      // std::cout << data_.J.get(k_cell(1), k_cell(0)).transpose() << std::endl
-      // << std::endl; std::cout << data_.H.get(k_cell(1), k_cell(0)) <<
-      // std::endl << std::endl;
-      if (_H)
-        *_H -= data_.H.get(k_cell(1), k_cell(0));
-    }
+    if (_H)
+      *_H -= data_.H.get(k_cell(1), k_cell(0));
   }
 
   // flip the derivate back to the original frame.
@@ -599,23 +444,25 @@ pose_gradient::get_cost(const pose& _se2, jacobian* _J, hessian* _H) const {
   Eigen::Matrix3d rot = m_to_k.matrix();
   rot(0, 2) = 0;
   rot(1, 2) = 0;
-  // std::cout << "rot\n" << rot << std::endl;
-  // std::cout << "J\n" << _J->transpose() << std::endl;
+
   if (_J)
     *_J = rot * *_J;
 
   if (_H) {
-    // std::cout << "H\n" << *_H << std::endl;
     hessian h1 = *_H;
     hessian h2 = _H->transpose();
     *_H = (h1 + h2) * 0.5;
-
-    // std::cout << "H sym\n" << *_H << std::endl;
-
     *_H = rot.transpose() * *_H * rot;
   }
 
   return sum;
+}
+
+rectangle<int>
+pose_gradient::get_bounding_box() const {
+  const rectangle<int> box = internal::_to_rectangle(data_.core.cost);
+  const cell origin(data_.core.center.x(), data_.core.center.y());
+  return rectangle<int>{box.colwise() - origin};
 }
 
 }  // namespace dpose_core

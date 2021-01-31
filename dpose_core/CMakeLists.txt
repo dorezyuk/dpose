@@ -22,7 +22,7 @@ catkin_package(
 ## Build ##
 ###########
 
-add_library(${PROJECT_NAME} src/dpose_core.cpp)
+add_library(${PROJECT_NAME} src/dpose_core.cpp src/dpose_costmap.cpp)
 target_include_directories(${PROJECT_NAME} PUBLIC src )
 target_include_directories(${PROJECT_NAME} PUBLIC SYSTEM 
   ${EIGEN3_INCLUDE_DIRS}

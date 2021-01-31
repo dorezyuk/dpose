@@ -23,6 +23,7 @@
  */
 #include <dpose_goal_tolerance/dpose_goal_tolerance.hpp>
 
+#include <costmap_2d/cost_values.h>
 #include <pluginlib/class_list_macros.h>
 #include <ros/ros.h>
 #include <tf2/LinearMath/Quaternion.h>
@@ -176,19 +177,71 @@ _loadTolerance(const std::string& _name, ros::NodeHandle& _nh) {
   return {impl};
 }
 
+cell_vector
+lethal_cells_within(const costmap_2d::Costmap2D& _map,
+                    const rectangle<int>& _bounds) {
+  // first swipe to count the number of elements
+  // todo enforce that bounds is within costmap
+  using dpose_core::internal::to_rays;
+  const auto rays = to_rays(_bounds);
+
+  size_t count = 0;
+  const auto char_map = _map.getCharMap();
+  for (const auto& ray : rays) {
+    const auto& y = ray.first;
+    // debug-asserts on the indices
+    assert(y >= 0 && "y index cannot be negative");
+    assert(y < _map.getSizeInCellsY() && "y index out of bounds");
+    assert(ray.second.min >= 0 && "x index cannot be negative");
+    assert(ray.second.max <= _map.getSizeInCellsX() && "x index out of bounds");
+
+    const auto ii_end = _map.getIndex(ray.second.max + 1, y);
+    // branchless formulation of "if(char_map[ii] == _value) {++count;}"
+    for (auto ii = _map.getIndex(ray.second.min, y); ii != ii_end; ++ii)
+      count += (char_map[ii] == costmap_2d::LETHAL_OBSTACLE);
+  }
+
+  // resize the final vector
+  cell_vector cells(count);
+
+  // dd is the index of the "destination" (where to write to)
+  auto dd_iter = cells.begin();
+
+  // write the cells
+  for (const auto& ray : rays) {
+    const auto& y = ray.first;
+    // the conversion to x-value from index is x = index - (y * x_size). the
+    // y_offset is here the second part of the equation.
+    const auto y_offset = y * _map.getSizeInCellsX();
+    const auto ii_end = _map.getIndex(ray.second.max + 1, y);
+
+    // as in the first swipe, but now we convert the index to cells
+    for (auto ii = _map.getIndex(ray.second.min, y); ii != ii_end; ++ii) {
+      if (char_map[ii] == costmap_2d::LETHAL_OBSTACLE)
+        *dd_iter++ = {ii - y_offset, y};
+    }
+  }
+
+  assert(dd_iter == cells.end() && "bad index: dd_iter");
+
+  return cells;
+}
+
 gradient_decent::gradient_decent(parameter&& _param) noexcept :
     param_(std::move(_param)) {}
 
 std::pair<float, Eigen::Vector3d>
 gradient_decent::solve(const pose_gradient& _pg,
-                       const Eigen::Vector3d& _start) const {
+                       const pose_gradient::pose& _start,
+                       const cell_vector& _cells) const {
   // super simple gradient decent algorithm with a limit on the max step
   // for now we set it to 1 cell size.
   std::pair<float, Eigen::Vector3d> res{0.0F, _start};
   dpose_core::internal::jacobian_data::jacobian J;
   for (size_t ii = 0; ii != param_.iter; ++ii) {
     // get the derivative (d)
-    res.first = _pg.get_cost(res.second, &J, nullptr);
+    res.first =
+        _pg.get_cost(res.second, _cells.begin(), _cells.end(), &J, nullptr);
 
     // scale the vector such that its norm is at most the _param.step
     // (the scaling is done seperately for translation (t) and rotation (r))
@@ -207,6 +260,7 @@ gradient_decent::solve(const pose_gradient& _pg,
 
 // some shortcuts for the conversion functions below
 using costmap_2d::Costmap2D;
+using Eigen::Isometry2d;
 using Eigen::Vector3d;
 using geometry_msgs::PoseStamped;
 
@@ -218,6 +272,11 @@ _to_eigen(const PoseStamped& _msg) noexcept {
   out.y() = _msg.pose.position.y;
   out.z() = tf2::getYaw(_msg.pose.orientation);
   return out;
+}
+
+inline Isometry2d
+_to_eigen(double _x, double _y, double _yaw) noexcept {
+  return Eigen::Translation2d(_x, _y) * Eigen::Rotation2Dd(_yaw);
 }
 
 /// @brief converts Eigen::Vector3d to PoseStamped with the given _frame
@@ -275,8 +334,32 @@ DposeGoalTolerance::preProcess(Pose& _start, Pose& _goal) {
   const Vector3d metric_se2 = _to_eigen(_goal);
   const Vector3d cell_se2 = _to_cells(metric_se2, map);
 
+  // get the kernel box - this box is "axis" alinged, since its in the kernel
+  // coordinate frame.
+  rectangle<int> k_box = grad_.get_bounding_box();
+
+  // add the tolerance. for now we assume the tolerance is fixed
+  auto k_min = k_box.minCoeff();
+  auto k_max = k_box.maxCoeff();
+  const auto tol = k_max - k_min / 4;
+  k_min -= tol;
+  k_max += tol;
+
+  // clang-format off
+  k_box << k_min, k_max, k_max, k_min, k_min,
+           k_min, k_min, k_max, k_max, k_min;
+  // clang-format on
+
+  // transform the box into map frame
+  const Isometry2d m_T_k = _to_eigen(cell_se2.x(), cell_se2.y(), cell_se2.z());
+  const rectangle<int> m_box =
+      (m_T_k * k_box.cast<double>()).array().round().matrix().cast<int>();
+
+  // get the lethal cells in the "roi"
+  const cell_vector cells = lethal_cells_within(map, m_box);
+
   // run the optimization on the goal pose
-  const std::pair<float, Vector3d> res = opt_.solve(grad_, cell_se2);
+  const std::pair<float, Vector3d> res = opt_.solve(grad_, cell_se2, cells);
 
   // we only update the pose, if we have "succeeded"
   const auto success = res.first <= epsilon_;
@@ -309,9 +392,12 @@ DposeGoalTolerance::initialize(const std::string& _name, Map* _map) {
     // get the padding for the footprint.
     // the padding is unsigned so we take here the abs
     param.padding = std::abs(pnh.param("padding", 2));
+    param.generate_hessian = false;
 
     // setup the pose-gradient
-    grad_ = dpose_core::pose_gradient{*_map->getLayeredCostmap(), param};
+    const auto footprint =
+        dpose_core::internal::make_footprint(*_map->getLayeredCostmap());
+    grad_ = dpose_core::pose_gradient{footprint, param};
   }
 
   {

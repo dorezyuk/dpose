@@ -24,10 +24,41 @@ constexpr char _name[] = "[dpose_goal_tolerance]: ";
 
 namespace dpose_goal_tolerance {
 
-namespace {
+namespace internal {
+
+tolerance::angle_tolerance::angle_tolerance(double _tol) :
+    tol_(angles::normalize_angle_positive(_tol)) {}
+
+tolerance::sphere_tolerance::sphere_tolerance(const pose& _norm) :
+    radius_(_norm.norm()) {}
+
+tolerance::box_tolerance::box_tolerance(const pose& _box) :
+    box_(_box.array().abs().matrix()) {}
+
+tolerance::tolerance_ptr
+tolerance::factory(const mode& _m, const pose& _p) noexcept {
+  switch (_m) {
+    case mode::NONE: return nullptr;
+    case mode::ANGLE: return tolerance_ptr{new angle_tolerance(_p.z())};
+    case mode::SPHERE: return tolerance_ptr{new sphere_tolerance(_p)};
+    case mode::BOX: return tolerance_ptr{new box_tolerance(_p)};
+  }
+  return nullptr;
+}
+
+tolerance::tolerance(const mode& _m, const pose& _center) {
+  if (_m != mode::NONE)
+    impl_.emplace_back(factory(_m, _center));
+}
+
+tolerance::tolerance(const list_type& _list) {
+  for (const auto& pair : _list) {
+    if (pair.first != mode::NONE)
+      impl_.emplace_back(factory(pair.first, pair.second));
+  }
+}
 
 // short-cuts
-using dpose_core::tolerance;
 using XmlRpc::XmlRpcException;
 using XmlRpc::XmlRpcValue;
 
@@ -122,6 +153,35 @@ _loadTolerance(const std::string& _name, ros::NodeHandle& _nh) {
   return {impl};
 }
 
+gradient_decent::gradient_decent(parameter&& _param) noexcept :
+    param_(std::move(_param)) {}
+
+std::pair<float, Eigen::Vector3d>
+gradient_decent::solve(const pose_gradient& _pg,
+                       const Eigen::Vector3d& _start) const {
+  // super simple gradient decent algorithm with a limit on the max step
+  // for now we set it to 1 cell size.
+  std::pair<float, Eigen::Vector3d> res{0.0F, _start};
+  dpose_core::internal::jacobian_data::jacobian J;
+  for (size_t ii = 0; ii != param_.iter; ++ii) {
+    // get the derivative (d)
+    res.first = _pg.get_cost(res.second, &J, nullptr);
+
+    // scale the vector such that its norm is at most the _param.step
+    // (the scaling is done seperately for translation (t) and rotation (r))
+    const auto norm_t = std::max(J.segment(0, 2).norm(), param_.step_t);
+    const auto norm_r = std::max(std::abs(J(2)), param_.step_r);
+    J.segment(0, 2) *= (param_.step_t / norm_t);
+    J(2) *= (param_.step_r / norm_r);
+
+    // the "gradient decent"
+    res.second -= J;
+    if (res.first <= param_.epsilon || !param_.tol.within(_start, res.second))
+      break;
+  }
+  return res;
+}
+
 // some shortcuts for the conversion functions below
 using costmap_2d::Costmap2D;
 using Eigen::Vector3d;
@@ -167,7 +227,9 @@ _to_metric(const Vector3d& _cell, const Costmap2D& _map) noexcept {
   return origin + _cell * res;
 }
 
-}  // namespace
+}  // namespace internal
+
+using namespace internal;
 
 bool
 DposeGoalTolerance::preProcess(Pose& _start, Pose& _goal) {
@@ -231,7 +293,7 @@ DposeGoalTolerance::initialize(const std::string& _name, Map* _map) {
 
   {
     // here we take care of the gradient_decent setup
-    dpose_core::gradient_decent::parameter param;
+    gradient_decent::parameter param;
     // get the tolerances
     param.tol = _loadTolerance("tolerance", pnh);
 
@@ -243,7 +305,7 @@ DposeGoalTolerance::initialize(const std::string& _name, Map* _map) {
     epsilon_ = param.epsilon = pnh.param("epsilon", 0.5);
 
     // setup the gradient-decent
-    opt_ = dpose_core::gradient_decent{std::move(param)};
+    opt_ = gradient_decent{std::move(param)};
   }
 }
 

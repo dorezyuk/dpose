@@ -303,8 +303,8 @@ jacobian_data
 _init_jacobian(const cost_data& _data) {
   jacobian_data J;
   // get our three derivatives
-  cv::Sobel(_data.cost, J.d_x, cv::DataType<float>::type, 1, 0, 5, 1./ 64.);
-  cv::Sobel(_data.cost, J.d_y, cv::DataType<float>::type, 0, 1, 5, 1./ 64.);
+  cv::Sobel(_data.cost, J.d_x, cv::DataType<float>::type, 1, 0, 5, 1. / 64.);
+  cv::Sobel(_data.cost, J.d_y, cv::DataType<float>::type, 0, 1, 5, 1. / 64.);
   J.d_z = _angular_derivative(_data.cost, _data.center);
 
   // safe the jacobians if compiled in debug mode
@@ -317,13 +317,14 @@ _init_jacobian(const cost_data& _data) {
 
 /// @brief will generate the hessian data based on the jacobian data
 hessian_data
-_init_hessian(const cost_data& _data, const jacobian_data& _J, const Eigen::Vector2i& _center) {
+_init_hessian(const cost_data& _data, const jacobian_data& _J,
+              const Eigen::Vector2i& _center) {
   hessian_data H;
   // todo this is crap
   // second derivative to x
-  cv::Sobel(_J.d_x, H.d_x_x, cv::DataType<float>::type, 1, 0, 5, 1./ 4096.);
-  cv::Sobel(_J.d_y, H.d_y_x, cv::DataType<float>::type, 1, 0, 5, 1./ 4096.);
-  cv::Sobel(_J.d_z, H.d_z_x, cv::DataType<float>::type, 1, 0, 5, 1./ 4096.);
+  cv::Sobel(_J.d_x, H.d_x_x, cv::DataType<float>::type, 1, 0, 5, 1. / 4096.);
+  cv::Sobel(_J.d_y, H.d_y_x, cv::DataType<float>::type, 1, 0, 5, 1. / 4096.);
+  cv::Sobel(_J.d_z, H.d_z_x, cv::DataType<float>::type, 1, 0, 5, 1. / 4096.);
 
   // safe the hessians if compiled in debug mode
   assert(cv::imwrite("/tmp/d_x_x.jpg", H.d_x_x * 10 + 100));
@@ -331,9 +332,9 @@ _init_hessian(const cost_data& _data, const jacobian_data& _J, const Eigen::Vect
   assert(cv::imwrite("/tmp/d_theta_x.jpg", H.d_z_x * 10 + 100));
 
   // second derivative to y
-  cv::Sobel(_J.d_x, H.d_x_y, cv::DataType<float>::type, 0, 1, 5, 1./ 4096.);
-  cv::Sobel(_J.d_y, H.d_y_y, cv::DataType<float>::type, 0, 1, 5, 1./ 4096.);
-  cv::Sobel(_J.d_z, H.d_z_y, cv::DataType<float>::type, 0, 1, 5, 1./ 4096.);
+  cv::Sobel(_J.d_x, H.d_x_y, cv::DataType<float>::type, 0, 1, 5, 1. / 4096.);
+  cv::Sobel(_J.d_y, H.d_y_y, cv::DataType<float>::type, 0, 1, 5, 1. / 4096.);
+  cv::Sobel(_J.d_z, H.d_z_y, cv::DataType<float>::type, 0, 1, 5, 1. / 4096.);
 
   // safe the hessians if compiled in debug mode
   assert(cv::imwrite("/tmp/d_x_y.jpg", H.d_x_y * 10 + 100));
@@ -585,9 +586,10 @@ pose_gradient::get_cost(const pose& _se2, jacobian* _J, hessian* _H) const {
         *_J -= data_.J.get(k_cell(1), k_cell(0));
 
       // std::cout << k_cell << std::endl;
-      // std::cout << data_.J.get(k_cell(1), k_cell(0)).transpose() << std::endl << std::endl;
-      // std::cout << data_.H.get(k_cell(1), k_cell(0)) << std::endl << std::endl;
-      if (_H) 
+      // std::cout << data_.J.get(k_cell(1), k_cell(0)).transpose() << std::endl
+      // << std::endl; std::cout << data_.H.get(k_cell(1), k_cell(0)) <<
+      // std::endl << std::endl;
+      if (_H)
         *_H -= data_.H.get(k_cell(1), k_cell(0));
     }
   }
@@ -598,87 +600,22 @@ pose_gradient::get_cost(const pose& _se2, jacobian* _J, hessian* _H) const {
   rot(0, 2) = 0;
   rot(1, 2) = 0;
   // std::cout << "rot\n" << rot << std::endl;
-    // std::cout << "J\n" << _J->transpose() << std::endl;
-  if (_J) 
+  // std::cout << "J\n" << _J->transpose() << std::endl;
+  if (_J)
     *_J = rot * *_J;
 
-  if (_H){
+  if (_H) {
     // std::cout << "H\n" << *_H << std::endl;
     hessian h1 = *_H;
     hessian h2 = _H->transpose();
     *_H = (h1 + h2) * 0.5;
-    
+
     // std::cout << "H sym\n" << *_H << std::endl;
 
     *_H = rot.transpose() * *_H * rot;
   }
 
   return sum;
-}
-
-tolerance::angle_tolerance::angle_tolerance(double _tol) :
-    tol_(angles::normalize_angle_positive(_tol)) {}
-
-tolerance::sphere_tolerance::sphere_tolerance(double _rad) :
-    radius_(std::abs(_rad)) {}
-
-tolerance::box_tolerance::box_tolerance(const pose& _box) :
-    box_(_box.array().abs().matrix()) {}
-
-tolerance::box_tolerance::box_tolerance(double _size) :
-    box_tolerance(pose(_size, _size, _size)) {}
-
-tolerance::tolerance_ptr
-tolerance::factory(const mode& _m, const pose& _p) noexcept {
-  switch (_m) {
-    case mode::NONE: return nullptr;
-    case mode::ANGLE: return tolerance_ptr{new angle_tolerance(_p.z())};
-    case mode::SPHERE: return tolerance_ptr{new sphere_tolerance(_p.norm())};
-    case mode::BOX: return tolerance_ptr{new box_tolerance(_p)};
-  }
-  assert(false && "reached switch-case end");
-  return nullptr;
-}
-
-tolerance::tolerance(const mode& _m, const pose& _center) {
-  if (_m != mode::NONE)
-    impl_.emplace_back(factory(_m, _center));
-}
-
-tolerance::tolerance(const list_type& _list) {
-  for (const auto& pair : _list) {
-    if (pair.first != mode::NONE)
-      impl_.emplace_back(factory(pair.first, pair.second));
-  }
-}
-
-gradient_decent::gradient_decent(parameter&& _param) noexcept :
-    param_(std::move(_param)) {}
-
-std::pair<float, Eigen::Vector3d>
-gradient_decent::solve(const pose_gradient& _pg,
-                       const Eigen::Vector3d& _start) const {
-  // super simple gradient decent algorithm with a limit on the max step
-  // for now we set it to 1 cell size.
-  std::pair<float, Eigen::Vector3d> res{0.0F, _start};
-  internal::jacobian_data::jacobian J;
-  for (size_t ii = 0; ii != param_.iter; ++ii) {
-    // get the derivative (d)
-    res.first = _pg.get_cost(res.second, &J, nullptr);
-
-    // scale the vector such that its norm is at most the _param.step
-    // (the scaling is done seperately for translation (t) and rotation (r))
-    const auto norm_t = std::max(J.segment(0, 2).norm(), param_.step_t);
-    const auto norm_r = std::max(std::abs(J(2)), param_.step_r);
-    J.segment(0, 2) *= (param_.step_t / norm_t);
-    J(2) *= (param_.step_r / norm_r);
-
-    // the "gradient decent"
-    res.second += J;
-    if (res.first <= param_.epsilon || !param_.tol.within(_start, res.second))
-      break;
-  }
-  return res;
 }
 
 }  // namespace dpose_core

@@ -334,7 +334,7 @@ DposeGoalTolerance::preProcess(Pose& _start, Pose& _goal) {
   const Vector3d metric_se2 = _to_eigen(_goal);
   const Vector3d cell_se2 = _to_cells(metric_se2, map);
 
-  // get the kernel box - this box is "axis" alinged, since its in the kernel
+  // get the kernel box - this box is "axis" aligned, since its in the kernel
   // coordinate frame.
   rectangle<int> k_box = grad_.get_bounding_box();
 

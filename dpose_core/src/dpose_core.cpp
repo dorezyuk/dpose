@@ -28,12 +28,8 @@
 #include <algorithm>
 #include <array>
 #include <cassert>
-#include <cmath>
-#include <limits>
-#include <numeric>
+#include <iterator>
 #include <stdexcept>
-#include <unordered_map>
-#include <utility>
 #include <vector>
 
 namespace dpose_core {
@@ -417,6 +413,7 @@ pose_gradient::get_cost(const pose& _se2, cell_vector::const_iterator _begin,
     *_H = hessian::Zero();
 
   const transform_type k_to_m = m_to_k.inverse();
+  const Eigen::Array2i bounds(data_.core.cost.cols, data_.core.cost.rows);
 
   for (; _begin != _end; ++_begin) {
     // convert to the kernel frame
@@ -424,8 +421,7 @@ pose_gradient::get_cost(const pose& _se2, cell_vector::const_iterator _begin,
         (k_to_m * _begin->cast<double>()).array().round().cast<int>().matrix();
 
     // check if k_cell is valid
-    if ((k_cell.array() < 0).any() || k_cell(0) >= data_.core.cost.cols ||
-        k_cell(1) >= data_.core.cost.rows)
+    if ((k_cell.array() < 0).any() || (k_cell.array() >= bounds).any())
       continue;
 
     // update our outputs

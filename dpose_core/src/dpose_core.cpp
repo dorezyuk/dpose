@@ -335,14 +335,6 @@ to_eigen(double _x, double _y, double _yaw) noexcept {
   return Eigen::Translation2d(_x, _y) * Eigen::Rotation2Dd(_yaw);
 }
 
-/// @brief checks if the _box is inside a rectangle starting at (0, 0) and
-/// ending at _max
-inline bool
-is_inside(const Eigen::Vector2d& _max, const rectangle<double>& _box) noexcept {
-  return (_box.array() >= 0).all() && (_box.row(0).array() < _max(0)).all() &&
-         (_box.row(1).array() < _max(1)).all();
-}
-
 pose_gradient::pose_gradient(const polygon& _footprint,
                              const parameter& _param) {
   // we need an area

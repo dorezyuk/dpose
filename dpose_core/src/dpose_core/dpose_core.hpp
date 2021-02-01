@@ -28,12 +28,13 @@
 
 #include <Eigen/Dense>
 
-#include <vector>
 #include <stdexcept>
+#include <vector>
 
 namespace dpose_core {
 
 /// @brief a closed rectangle (hence 5 columns)
+/// First row holds the x, and second row y values.
 template <typename _T>
 using rectangle = Eigen::Matrix<_T, 2, 5>;
 
@@ -58,7 +59,7 @@ using polygon = Eigen::Matrix<int, 2UL, Eigen::Dynamic>;
 using cell = Eigen::Vector2i;
 using cell_vector = std::vector<cell>;
 
-// forward-decleration so we can befriend these stuctures together.
+// forward-decleration so we can befriend these structures together.
 struct jacobian_data;
 struct hessian_data;
 
@@ -203,7 +204,7 @@ struct hessian_data {
     return at(_cell.y(), _cell.x());
   }
 
-  double 
+  double
   at(size_t _z, int _y, int _x) const {
     switch (_z) {
       case 0: return d_x_x.at<float>(_y, _x);

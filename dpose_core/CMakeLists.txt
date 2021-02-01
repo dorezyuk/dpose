@@ -2,10 +2,10 @@ cmake_minimum_required(VERSION 3.6.0)
 project(dpose_core)
 
 set(CATKIN_PACKAGES angles costmap_2d geometry_msgs)
-add_compile_options(-Wpedantic -Wall -Wextra)
+# add_compile_options(-Wpedantic -Wall -Wextra)
 
 # the clang-tidy checks are optional
-set(CMAKE_CXX_CLANG_TIDY clang-tidy -checks=-*,clang-analyzer-cplusplus*,clang-diagnostic-*,clang-analyzer-*)
+# set(CMAKE_CXX_CLANG_TIDY clang-tidy -checks=-*,clang-analyzer-cplusplus*,clang-diagnostic-*,clang-analyzer-*)
 
 find_package(catkin REQUIRED COMPONENTS ${CATKIN_PACKAGES})
 find_package(Eigen3 REQUIRED)

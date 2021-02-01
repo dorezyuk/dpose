@@ -350,7 +350,8 @@ pose_gradient::pose_gradient(const polygon& _footprint,
 
   data_.core = cost_data(_footprint, _param.padding);
   data_.J = jacobian_data(data_.core);
-  data_.H = hessian_data(data_.core, data_.J);
+  if (_param.generate_hessian)
+    data_.H = hessian_data(data_.core, data_.J);
 }
 
 float

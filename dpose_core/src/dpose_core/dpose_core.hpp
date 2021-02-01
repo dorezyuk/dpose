@@ -37,8 +37,8 @@ template <typename _T>
 using rectangle = Eigen::Matrix<_T, 2, 5>;
 
 /// @brief constructs a rectangle with the given width and height
-/// @param w width of the rectangle
-/// @param h height of the rectangle
+/// @param _w width of the rectangle
+/// @param _h height of the rectangle
 template <typename _T>
 inline rectangle<_T>
 to_rectangle(const _T& w, const _T& h) noexcept {
@@ -69,6 +69,9 @@ struct cost_data {
   cost_data() = default;
   cost_data(const polygon& _footprint, size_t _padding);
 
+  /// @brief returns the cost at the given x and y.
+  /// @param _x column of the pixel.
+  /// @param _y row 0f the pixel.
   inline float
   at(int _y, int _x) const {
     return cost.at<float>(_y, _x);
@@ -183,18 +186,18 @@ struct data {
   hessian_data H;
 };
 
-/// @brief POD defining the parameters
-struct parameter {
-  unsigned int padding = 2;  ///< padding of the given footprint (in cells)
-  bool generate_hessian = false;
-};
-
 /**
  * @brief computes a pose-gradient from the given costmap
  *
  * The input (and output) is in cell-domain (not metric).
  */
 struct pose_gradient {
+  /// @brief POD defining the parameters
+  struct parameter {
+    unsigned int padding = 2;  ///< padding of the given footprint (in cells)
+    bool generate_hessian = false;
+  };
+
   // the three arguments for get_pose
   using jacobian = jacobian_data::jacobian;
   using hessian = hessian_data::hessian;

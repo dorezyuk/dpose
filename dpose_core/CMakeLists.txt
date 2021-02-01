@@ -53,7 +53,9 @@ install(DIRECTORY src/${PROJECT_NAME}/
 if(CATKIN_ENABLE_TESTING)
   find_package(rostest)
   catkin_add_gtest(${PROJECT_NAME}_test
-    test/tolerance.cpp)
+    test/cost_data.cpp
+    test/hessian_data.cpp
+    test/jacobian_data.cpp)
 
   target_include_directories(${PROJECT_NAME}_test PUBLIC src)
   if (TARGET ${PROJECT_NAME}_test)

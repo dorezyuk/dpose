@@ -17,7 +17,9 @@
   <depend>tf2_geometry_msgs</depend>
 
   <!-- non-ros-related libs -->
+  <depend>eigen</depend>
   <depend>coinor-libipopt-dev</depend>
+  <depend>blas</depend>
 
   <test_depend>rostest</test_depend>
   <export>

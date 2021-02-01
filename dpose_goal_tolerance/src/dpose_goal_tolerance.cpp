@@ -182,7 +182,7 @@ lethal_cells_within(const costmap_2d::Costmap2D& _map,
                     const rectangle<int>& _bounds) {
   // first swipe to count the number of elements
   // todo enforce that bounds is within costmap
-  using dpose_core::internal::to_rays;
+  using dpose_core::to_rays;
   const auto rays = to_rays(_bounds);
 
   size_t count = 0;
@@ -237,7 +237,7 @@ gradient_decent::solve(const pose_gradient& _pg,
   // super simple gradient decent algorithm with a limit on the max step
   // for now we set it to 1 cell size.
   std::pair<float, Eigen::Vector3d> res{0.0F, _start};
-  dpose_core::internal::jacobian_data::jacobian J;
+  dpose_core::jacobian_data::jacobian J;
   for (size_t ii = 0; ii != param_.iter; ++ii) {
     // get the derivative (d)
     res.first =
@@ -336,7 +336,7 @@ DposeGoalTolerance::preProcess(Pose& _start, Pose& _goal) {
 
   // get the kernel box - this box is "axis" aligned, since its in the kernel
   // coordinate frame.
-  rectangle<int> k_box = grad_.get_bounding_box();
+  rectangle<int> k_box = grad_.get_data().core.get_box();
 
   // add the tolerance. for now we assume the tolerance is fixed
   auto k_min = k_box.minCoeff();
@@ -396,7 +396,7 @@ DposeGoalTolerance::initialize(const std::string& _name, Map* _map) {
 
     // setup the pose-gradient
     const auto footprint =
-        dpose_core::internal::make_footprint(*_map->getLayeredCostmap());
+        dpose_core::make_footprint(*_map->getLayeredCostmap());
     grad_ = dpose_core::pose_gradient{footprint, param};
   }
 

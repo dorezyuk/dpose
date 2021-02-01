@@ -28,11 +28,13 @@
 
 #include <Eigen/Dense>
 
+#include <stdexcept>
 #include <vector>
 
 namespace dpose_core {
 
 /// @brief a closed rectangle (hence 5 columns)
+/// First row holds the x, and second row y values.
 template <typename _T>
 using rectangle = Eigen::Matrix<_T, 2, 5>;
 
@@ -57,7 +59,7 @@ using polygon = Eigen::Matrix<int, 2UL, Eigen::Dynamic>;
 using cell = Eigen::Vector2i;
 using cell_vector = std::vector<cell>;
 
-// forward-decleration so we can befriend these stuctures together.
+// forward-decleration so we can befriend these structures together.
 struct jacobian_data;
 struct hessian_data;
 
@@ -73,9 +75,16 @@ struct cost_data {
   /// @brief returns the cost at the given x and y.
   /// @param _x column of the pixel.
   /// @param _y row 0f the pixel.
-  inline float
+  inline double
   at(int _y, int _x) const {
-    return cost.at<float>(_y, _x);
+    return static_cast<double>(cost.at<float>(_y, _x));
+  }
+
+  /// @brief returns the cost at the given pixel.
+  /// @param _cell coordinate of the pixel.
+  inline double
+  at(const cell& _cell) const {
+    return at(_cell.y(), _cell.x());
   }
 
   inline const cv::Mat&
@@ -127,6 +136,23 @@ struct jacobian_data {
             static_cast<double>(d_z.at<float>(_y, _x))};
   }
 
+  /// @brief returns the jacobian at the given pixel.
+  /// @param _cell coordinate of the pixel.
+  inline jacobian
+  at(const cell& _cell) const {
+    return at(_cell.y(), _cell.x());
+  }
+
+  inline double
+  at(size_t _z, int _y, int _x) const {
+    switch (_z) {
+      case 0: return static_cast<double>(d_x.at<float>(_y, _x));
+      case 1: return static_cast<double>(d_y.at<float>(_y, _x));
+      case 2: return static_cast<double>(d_z.at<float>(_y, _x));
+      default: throw std::out_of_range("invalid z index");
+    }
+  }
+
 private:
   cv::Mat d_x;  ///< derivative of the cost in x
   cv::Mat d_y;  ///< derivative of the cost in y
@@ -169,6 +195,26 @@ struct hessian_data {
          d_z_x.at<float>(_y, _x), d_y_z.at<float>(_y, _x), d_z_z.at<float>(_y, _x);
     // clang-format on
     return H;
+  }
+
+  /// @brief returns the hessian at the given pixel.
+  /// @param _cell coordinate of the pixel.
+  inline hessian
+  at(const cell& _cell) const {
+    return at(_cell.y(), _cell.x());
+  }
+
+  double
+  at(size_t _z, int _y, int _x) const {
+    switch (_z) {
+      case 0: return d_x_x.at<float>(_y, _x);
+      case 1: return d_y_x.at<float>(_y, _x);
+      case 2: return d_z_x.at<float>(_y, _x);
+      case 3: return d_y_y.at<float>(_y, _x);
+      case 4: return d_y_z.at<float>(_y, _x);
+      case 5: return d_z_z.at<float>(_y, _x);
+      default: throw std::out_of_range("invalid z index");
+    }
   }
 
 private:

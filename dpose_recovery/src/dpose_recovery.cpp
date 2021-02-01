@@ -21,7 +21,7 @@ little_gauss(size_t _n) noexcept {
 
 Problem::Problem(costmap_2d::LayeredCostmap &_lcm, const Parameter &_our_param,
                  const pose_gradient::parameter &_param) :
-    pg_(_lcm, _param),
+    pg_(dpose_core::make_footprint(_lcm), _param),
     param_(_our_param),
     x_(_our_param.steps),
     pg_data(_our_param.steps),
@@ -121,7 +121,7 @@ Problem::on_new_u(Index n, const Number *u) {
     // ROS_INFO_STREAM("curr " << curr.transpose());
 
     // find J_ii and H_ii. We abuse the J_hat and H_hat as dummies.
-    cost += pg_.get_cost(curr, &J_hat.at(ii), &H_hat.at(ii));
+    // cost += pg_.get_cost(curr, &J_hat.at(ii), &H_hat.at(ii));
     // ROS_INFO_STREAM("J\n" << J_hat.at(ii).transpose());
     // ROS_INFO_STREAM("H\n" << H_hat.at(ii));
 

@@ -210,6 +210,7 @@ _mark_gradient(const cell_type& _prev, const cell_type& _curr,
   // skip if not all are valid
   if (_is_valid(_curr, _image) && _is_valid(_prev, _source) &&
       _is_valid(_next, _source)) {
+    // todo the scaling by the step size is missing
     _image.at<float>(_curr) =
         _source.at<float>(_next) - _source.at<float>(_prev);
   }
@@ -291,8 +292,8 @@ cost_data::cost_data(const polygon& _footprint, size_t _padding) {
 }
 
 jacobian_data::jacobian_data(const cost_data& _data) {
-  cv::Sobel(_data.cost, d_x, cv::DataType<float>::type, 1, 0, 5, 1. / 64.);
-  cv::Sobel(_data.cost, d_y, cv::DataType<float>::type, 0, 1, 5, 1. / 64.);
+  cv::Sobel(_data.cost, d_x, cv::DataType<float>::type, 1, 0, 5, 1. / 128.);
+  cv::Sobel(_data.cost, d_y, cv::DataType<float>::type, 0, 1, 5, 1. / 128.);
   d_z = _angular_derivative(_data.cost, _data.center);
 
   // safe the jacobians if compiled in debug mode
@@ -377,27 +378,62 @@ pose_gradient::get_cost(const pose& _se2, cell_vector::const_iterator _begin,
     *_H = hessian::Zero();
 
   const transform_type k_to_m = m_to_k.inverse();
-  const Eigen::Array2i bounds(data_.core.get_data().cols,
+  const Eigen::Array2d bounds(data_.core.get_data().cols,
                               data_.core.get_data().rows);
+
+  Eigen::Array2d k_cell;
+  Eigen::Array2i k_lower, k_upper;
+  Eigen::Matrix2d m;
+  Eigen::Vector2d c_rel, c_rel_x, c_rel_y;
 
   for (; _begin != _end; ++_begin) {
     // convert to the kernel frame
-    const cell k_cell =
-        (k_to_m * _begin->cast<double>()).array().round().cast<int>().matrix();
+    k_cell = (k_to_m * _begin->cast<double>()).array();
 
-    // check if k_cell is valid
-    if ((k_cell.array() < 0).any() || (k_cell.array() >= bounds).any())
+    // interpolate the cost: get the cell-indices of interest.
+    // see https://en.wikipedia.org/wiki/Bilinear_interpolation for details.
+    k_upper = k_cell.round().cast<int>();
+    k_lower = k_upper - 1;
+
+    // check if the interpolated points are valid
+    if ((k_lower < 0).any() || (k_upper >= bounds.cast<int>()).any())
       continue;
 
-    // update our outputs
-    sum += data_.core.at(k_cell(1), k_cell(0));
+    // c_rel is the normalized point w.r.t a cell.
+    // c_rel is defined in [0, 1]^2
+    c_rel = k_cell.array() - k_upper.cast<double>() + 0.5;
+    c_rel_x << 1 - c_rel(0), c_rel(0);
+    c_rel_y << 1 - c_rel(1), c_rel(1);
+
+    // m is [[f_00, f_01], [f_10, f_11]]
+    m << data_.core.at(k_lower(1), k_lower(0)),
+        data_.core.at(k_upper(1), k_lower(0)),
+        data_.core.at(k_lower(1), k_upper(0)),
+        data_.core.at(k_upper(1), k_upper(0));
+    // update the cost
+    sum += c_rel_x.transpose() * m * c_rel_y;
 
     // J and H are optional
-    if (_J)
-      *_J += data_.J.at(k_cell(1), k_cell(0));
+    if (_J) {
+      for (size_t ii = 0; ii != 3; ++ii) {
+        m << data_.J.at(ii, k_lower(1), k_lower(0)),
+            data_.J.at(ii, k_upper(1), k_lower(0)),
+            data_.J.at(ii, k_lower(1), k_upper(0)),
+            data_.J.at(ii, k_upper(1), k_upper(0));
+        (*_J)(ii) += c_rel_x.transpose() * m * c_rel_y;
+      }
+    }
 
-    if (_H)
-      *_H += data_.H.at(k_cell(1), k_cell(0));
+    if (_H) {
+      for (size_t ii = 0; ii != 6; ++ii) {
+        m << data_.H.at(ii, k_lower(1), k_lower(0)),
+            data_.H.at(ii, k_upper(1), k_lower(0)),
+            data_.H.at(ii, k_lower(1), k_upper(0)),
+            data_.H.at(ii, k_upper(1), k_upper(0));
+        // note: we write out of order and fix this below
+        (*_H)(ii) += c_rel_x.transpose() * m * c_rel_y;
+      }
+    }
   }
 
   // flip the derivate back to the original frame.
@@ -406,18 +442,20 @@ pose_gradient::get_cost(const pose& _se2, cell_vector::const_iterator _begin,
   rot(0, 2) = 0;
   rot(1, 2) = 0;
 
-  if (_J){
-    // std::cout << _J->transpose() << std::endl << std::endl;
-    // std::cout << rot << std::endl << std::endl;
+  if (_J)
     *_J = rot * *_J;
-    // std::cout << _J->transpose() << std::endl << std::endl;
-  }
 
   if (_H) {
-    hessian h1 = *_H;
-    hessian h2 = _H->transpose();
-    *_H = (h1 + h2) * 0.5;
-    *_H = rot.transpose() * *_H * rot;
+    // fix the lazy ordering from above
+    hessian H = *_H;
+    H(2, 2) = H(5);            // theta theta
+    H(1, 2) = H(2, 1) = H(4);  // y theta
+    H(1, 1) = H(3);            // y y
+    H(2, 0) = H(0, 2);         // x theta
+    H(1, 0) = H(0, 1);         // x y
+
+    // apply the rotation
+    *_H = rot.transpose() * H * rot;
   }
 
   return sum;

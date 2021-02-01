@@ -34,7 +34,7 @@ target_include_directories(${PROJECT_NAME} PUBLIC SYSTEM
    ${Ipopt_INCLUDE_DIRS})
 target_link_libraries(${PROJECT_NAME}
   ${catkin_LIBRARIES}
-  ${Ipopt_LIBRARIES})
+  ${Ipopt_LIBRARIES} blas lapack)
 
 #############
 ## Install ##

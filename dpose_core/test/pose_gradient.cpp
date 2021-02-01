@@ -4,6 +4,7 @@
 using namespace dpose_core;
 using testing::Range;
 using testing::TestWithParam;
+
 namespace {
 struct bad_footprint : public TestWithParam<int> {};
 

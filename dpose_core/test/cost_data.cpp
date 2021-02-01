@@ -60,6 +60,7 @@ TEST_P(translated_triangle, origin_variance) {
 
   EXPECT_EQ(original_center - GetParam(), translated_center);
 }
+
 }  // namespace
 
 namespace {
@@ -151,4 +152,5 @@ TEST_P(rotated_triangle, triangle) {
   EXPECT_EQ((r_min.array() - padding).matrix(), box_r_min);
   EXPECT_EQ((r_max.array() + 1 + padding).matrix(), box_r_max);
 }
+
 }  // namespace

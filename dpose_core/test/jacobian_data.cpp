@@ -1,9 +1,6 @@
 #include <dpose_core/dpose_core.hpp>
 #include <gtest/gtest.h>
 
-#include <array>
-#include <numeric>
-
 using namespace dpose_core;
 using testing::Range;
 using testing::TestWithParam;

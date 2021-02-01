@@ -35,13 +35,13 @@
 namespace dpose_core {
 
 /// @brief open-cv specific data-types
-using cell_type = cv::Point2i;
-using cell_vector_type = std::vector<cell_type>;
+using _cv_cell = cv::Point2i;
+using _cv_cell_vector = std::vector<_cv_cell>;
 
 /// @brief converts eigen to open-cv data
-cell_vector_type
+_cv_cell_vector
 _to_open_cv(const polygon& _footprint) noexcept {
-  cell_vector_type cells;
+  _cv_cell_vector cells;
   cells.reserve(_footprint.cols());
   for (int cc = 0; cc != _footprint.cols(); ++cc)
     cells.emplace_back(_footprint(0, cc), _footprint(1, cc));
@@ -90,7 +90,7 @@ _get_cost(const polygon& _fp, size_t& _padding) {
 
   // get the mask of the polygon defined by cells
   image.setTo(cv::Scalar(0));
-  std::vector<cell_vector_type> cells({_cells});
+  std::vector<_cv_cell_vector> cells({_cells});
   cv::fillPoly(image, cells, cv::Scalar(255));
 
   assert(cv::countNonZero(image) > 0 && "filling of the mask failed");
@@ -116,7 +116,7 @@ _get_cost(const polygon& _fp, size_t& _padding) {
 /// @brief helper to prune repetitions from _get_circular_cells
 /// @param _cells the pre-output from _get_circular_cells
 void
-_unique_cells(cell_vector_type& _cells) noexcept {
+_unique_cells(_cv_cell_vector& _cells) noexcept {
   if (_cells.empty())
     return;
   // use first unique to remove the overlaps
@@ -132,14 +132,14 @@ _unique_cells(cell_vector_type& _cells) noexcept {
 /// @brief returns the cells around _center at the given _radius
 /// @param _center the center cell
 /// @param _radius the radius (also in cells)
-cell_vector_type
-_get_circular_cells(const cell_type& _center, size_t _radius) noexcept {
+_cv_cell_vector
+_get_circular_cells(const _cv_cell& _center, size_t _radius) noexcept {
   // adjusted from
   // https://github.com/opencv/opencv/blob/master/modules/imgproc/src/drawing.cpp
   int x = _radius, y = 0;
   int err = 0, plus = 1, minus = (_radius << 1) - 1;
 
-  std::array<cell_vector_type, 8> octets;
+  std::array<_cv_cell_vector, 8> octets;
 
   while (x >= y) {
     // insert the octets - for now without fancy looping
@@ -168,7 +168,7 @@ _get_circular_cells(const cell_type& _center, size_t _radius) noexcept {
   }
 
   // now flatten the octets
-  cell_vector_type cells;
+  _cv_cell_vector cells;
   cells.reserve(octets.begin()->size() * octets.size());
   // we have to reverse every second octet
   bool reverse = false;
@@ -186,7 +186,7 @@ _get_circular_cells(const cell_type& _center, size_t _radius) noexcept {
 
 /// @brief checks if the _cell is within the _image
 inline bool
-_is_valid(const cell_type& _cell, const cv::Mat& _image) noexcept {
+_is_valid(const _cv_cell& _cell, const cv::Mat& _image) noexcept {
   return 0 <= _cell.x && _cell.x < _image.cols && 0 <= _cell.y &&
          _cell.y < _image.rows;
 }
@@ -204,8 +204,8 @@ _is_valid(const cell_type& _cell, const cv::Mat& _image) noexcept {
  * @param _source image based on which we are computing the gradient
  */
 void
-_mark_gradient(const cell_type& _prev, const cell_type& _curr,
-               const cell_type& _next, cv::Mat& _image,
+_mark_gradient(const _cv_cell& _prev, const _cv_cell& _curr,
+               const _cv_cell& _next, cv::Mat& _image,
                const cv::Mat& _source) noexcept {
   // skip if not all are valid
   if (_is_valid(_curr, _image) && _is_valid(_prev, _source) &&
@@ -244,7 +244,7 @@ _angular_derivative(cv::InputArray _image,
   // init the output image
   cv::Mat output(_image.size(), cv::DataType<float>::type, cv::Scalar(0));
   cv::Mat source = _image.getMat();
-  const cell_type center(_center.x(), _center.y());
+  const _cv_cell center(_center.x(), _center.y());
 
   // now iterate over the all steps
   for (int ii = 1; ii <= distance; ++ii) {

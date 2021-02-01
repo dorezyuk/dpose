@@ -1,9 +1,12 @@
 #include <dpose_core/dpose_core.hpp>
 #include <gtest/gtest.h>
 
+#include <array>
+#include <numeric>
+
 using namespace dpose_core;
-using testing::TestWithParam;
 using testing::Range;
+using testing::TestWithParam;
 
 inline polygon
 make_ship() {
@@ -15,8 +18,8 @@ make_ship() {
    */
   polygon ship(2, 6);
   // clang-format off
-    ship << 5,  4, -3, -6, -3, 4,
-            0, -2, -2,  0,  2, 2;
+    ship << 50,  40, -30, -60, -30, 40,
+            0, -20, -20,  0,  20, 20;
   // clang-format on
   return ship;
 }
@@ -32,29 +35,29 @@ TEST_P(rotation, x_grad) {
   pose_gradient pg(make_ship(), param);
 
   // we will swipe through yy
-  for (size_t yy = 0; yy != 10; ++yy) {
+  double sq_error = 0, left_cost, right_cost;
+  for (size_t yy = 0; yy != 20; ++yy) {
     // setup the cell-vector with the query
     cell_vector center_cells{cell(1, yy)};
     cell_vector left_cells{cell(0, yy)};
     cell_vector right_cells{cell{2, yy}};
-    // std::cout << yy << std::endl;
 
-    // setup the pose with 45 deg
+    // query the data
     pose_gradient::pose se2(0, 0, GetParam());
     pose_gradient::jacobian J;
 
     pg.get_cost(se2, center_cells.cbegin(), center_cells.cend(), &J, nullptr);
-    auto left_cost = pg.get_cost(se2, left_cells.cbegin(), left_cells.cend(),
-                                 nullptr, nullptr);
-    auto right_cost = pg.get_cost(se2, right_cells.cbegin(), right_cells.cend(),
-                                  nullptr, nullptr);
+    left_cost = pg.get_cost(se2, left_cells.cbegin(), left_cells.cend(),
+                            nullptr, nullptr);
+    right_cost = pg.get_cost(se2, right_cells.cbegin(), right_cells.cend(),
+                             nullptr, nullptr);
 
-    // std::cout << "left " << left_cost << std::endl;
-    // std::cout << "right " << right_cost << std::endl;
-    // std::cout << J.transpose() << std::endl;
-    const auto diff = right_cost - left_cost;
-    std::cout << diff - J.x() << std::endl;
-    // std::cout << "------------------------------" << std::endl;
+    // compute the error
+    const auto diff = (right_cost - left_cost) / 2.;
+    const auto error = diff - J.x();
+    sq_error += std::pow(error, 2);
+    EXPECT_LE(error, 0.5);
   }
+  EXPECT_LE(sq_error, 0.5);
 }
-}
+}  // namespace

@@ -291,8 +291,8 @@ cost_data::cost_data(const polygon& _footprint, size_t _padding) {
 }
 
 jacobian_data::jacobian_data(const cost_data& _data) {
-  cv::Sobel(_data.cost, d_x, cv::DataType<float>::type, 1, 0, 5, 1. / 64.);
-  cv::Sobel(_data.cost, d_y, cv::DataType<float>::type, 0, 1, 5, 1. / 64.);
+  cv::Sobel(_data.cost, d_x, cv::DataType<float>::type, 1, 0, 5, 1. / 128.);
+  cv::Sobel(_data.cost, d_y, cv::DataType<float>::type, 0, 1, 5, 1. / 128.);
   d_z = _angular_derivative(_data.cost, _data.center);
 
   // safe the jacobians if compiled in debug mode
@@ -405,8 +405,8 @@ pose_gradient::get_cost(const pose& _se2, cell_vector::const_iterator _begin,
 
     // m is [[f_00, f_01], [f_10, f_11]]
     m << data_.core.at(k_lower(1), k_lower(0)),
-        data_.core.at(k_lower(1), k_upper(0)),
         data_.core.at(k_upper(1), k_lower(0)),
+        data_.core.at(k_lower(1), k_upper(0)),
         data_.core.at(k_upper(1), k_upper(0));
     // update the cost
     sum += c_rel_x.transpose() * m * c_rel_y;
@@ -415,8 +415,8 @@ pose_gradient::get_cost(const pose& _se2, cell_vector::const_iterator _begin,
     if (_J) {
       for (size_t ii = 0; ii != 3; ++ii) {
         m << data_.J.at(ii, k_lower(1), k_lower(0)),
-            data_.J.at(ii, k_lower(1), k_upper(0)),
             data_.J.at(ii, k_upper(1), k_lower(0)),
+            data_.J.at(ii, k_lower(1), k_upper(0)),
             data_.J.at(ii, k_upper(1), k_upper(0));
         (*_J)(ii) += c_rel_x.transpose() * m * c_rel_y;
       }
@@ -432,12 +432,8 @@ pose_gradient::get_cost(const pose& _se2, cell_vector::const_iterator _begin,
   rot(0, 2) = 0;
   rot(1, 2) = 0;
 
-  if (_J) {
-    // std::cout << _J->transpose() << std::endl << std::endl;
-    // std::cout << rot << std::endl << std::endl;
+  if (_J)
     *_J = rot * *_J;
-    // std::cout << _J->transpose() << std::endl << std::endl;
-  }
 
   if (_H) {
     hessian h1 = *_H;

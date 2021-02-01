@@ -391,6 +391,7 @@ pose_gradient::get_cost(const pose& _se2, cell_vector::const_iterator _begin,
     k_cell = (k_to_m * _begin->cast<double>()).array();
 
     // interpolate the cost: get the cell-indices of interest.
+    // see https://en.wikipedia.org/wiki/Bilinear_interpolation for details.
     k_upper = k_cell.round().cast<int>();
     k_lower = k_upper - 1;
 

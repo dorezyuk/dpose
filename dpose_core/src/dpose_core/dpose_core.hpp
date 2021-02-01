@@ -29,6 +29,7 @@
 #include <Eigen/Dense>
 
 #include <vector>
+#include <stdexcept>
 
 namespace dpose_core {
 

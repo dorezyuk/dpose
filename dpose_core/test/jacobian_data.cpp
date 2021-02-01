@@ -11,10 +11,10 @@ using testing::TestWithParam;
 inline polygon
 make_ship() {
   /*
-   *  (-3, 2)    (4, 2)
-   * (-6, 0) /--\
-   *         \--/ (5, 0)
-   * (-3, -2)    (4, -2)
+   *  (-30, 20)    (40, 20)
+   * (-60, 0) /--\
+   *          \--/ (50, 0)
+   * (-30, -20)    (40, -20)
    */
   polygon ship(2, 6);
   // clang-format off
@@ -75,30 +75,24 @@ TEST_P(rotation, y_grad) {
   pose_gradient::pose se2(0, 0, GetParam());
   pose_gradient::jacobian J;
 
-  // mean squared error
   double mse = 0;
   double left_cost, right_cost;
 
   for (size_t xx = 0; xx != 20; ++xx) {
     for (size_t yy = 1; yy != 20; ++yy) {
-      // setup the cell-vector with the query
       cell_vector center_cells{cell(xx, yy)};
       cell_vector left_cells{cell(xx, yy - 1)};
       cell_vector right_cells{cell{xx, yy + 1}};
 
-      // query the data
       pg.get_cost(se2, center_cells.cbegin(), center_cells.cend(), &J, nullptr);
       left_cost = pg.get_cost(se2, left_cells.cbegin(), left_cells.cend(),
                               nullptr, nullptr);
       right_cost = pg.get_cost(se2, right_cells.cbegin(), right_cells.cend(),
                                nullptr, nullptr);
 
-      // compute the error
       const auto diff = (right_cost - left_cost) / 2.;
       const auto error = diff - J.y();
 
-      // we expect that we are "good enough". the value is rather high, since
-      // there are still some discretesation issues.
       EXPECT_LE(error, 0.5) << xx << ", " << yy;
       mse += std::pow(error, 2);
     }

@@ -2,6 +2,7 @@
 #define DPOSE_RECOVERY__DPOSE_RECVERY__HPP
 
 #include <dpose_core/dpose_core.hpp>
+#include <dpose_core/dpose_costmap.hpp>
 
 #include <nav_core/recovery_behavior.h>
 
@@ -78,10 +79,6 @@ struct Problem : public TNLP {
     double dt;  ///< time resolution, must be positive
     Eigen::Vector2d u_lower;
     Eigen::Vector2d u_upper;
-    // double v_lower;
-    // double v_upper;
-    // double w_lower;
-    // double w_upper;
   };
 
   Problem(costmap_2d::LayeredCostmap &_lcm, const Parameter &_our_param,

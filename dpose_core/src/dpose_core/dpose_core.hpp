@@ -144,9 +144,9 @@ struct jacobian_data {
   inline double
   at(size_t _z, int _y, int _x) const {
     switch (_z) {
-      case 0: return static_cast<double>(d_x.at<float>(_y, _x)); break;
-      case 1: return static_cast<double>(d_y.at<float>(_y, _x)); break;
-      case 2: return static_cast<double>(d_z.at<float>(_y, _x)); break;
+      case 0: return static_cast<double>(d_x.at<float>(_y, _x));
+      case 1: return static_cast<double>(d_y.at<float>(_y, _x));
+      case 2: return static_cast<double>(d_z.at<float>(_y, _x));
       default: throw std::out_of_range("invalid z index");
     }
   }
@@ -200,6 +200,19 @@ struct hessian_data {
   inline hessian
   at(const cell& _cell) const {
     return at(_cell.y(), _cell.x());
+  }
+
+  double 
+  at(size_t _z, int _y, int _x) const {
+    switch (_z) {
+      case 0: return d_x_x.at<float>(_y, _x);
+      case 1: return d_y_x.at<float>(_y, _x);
+      case 2: return d_z_x.at<float>(_y, _x);
+      case 3: return d_y_y.at<float>(_y, _x);
+      case 4: return d_y_z.at<float>(_y, _x);
+      case 5: return d_z_z.at<float>(_y, _x);
+      default: throw std::out_of_range("invalid z index");
+    }
   }
 
 private:

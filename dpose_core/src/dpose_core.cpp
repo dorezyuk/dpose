@@ -210,6 +210,7 @@ _mark_gradient(const cell_type& _prev, const cell_type& _curr,
   // skip if not all are valid
   if (_is_valid(_curr, _image) && _is_valid(_prev, _source) &&
       _is_valid(_next, _source)) {
+    // todo the scaling by the step size is missing
     _image.at<float>(_curr) =
         _source.at<float>(_next) - _source.at<float>(_prev);
   }
@@ -422,8 +423,16 @@ pose_gradient::get_cost(const pose& _se2, cell_vector::const_iterator _begin,
       }
     }
 
-    if (_H)
-      *_H += data_.H.at(k_cell(1), k_cell(0));
+    if (_H) {
+      for (size_t ii = 0; ii != 6; ++ii) {
+        m << data_.H.at(ii, k_lower(1), k_lower(0)),
+            data_.H.at(ii, k_upper(1), k_lower(0)),
+            data_.H.at(ii, k_lower(1), k_upper(0)),
+            data_.H.at(ii, k_upper(1), k_upper(0));
+        // note: we write out of order and fix this below
+        (*_H)(ii) += c_rel_x.transpose() * m * c_rel_y;
+      }
+    }
   }
 
   // flip the derivate back to the original frame.
@@ -436,10 +445,16 @@ pose_gradient::get_cost(const pose& _se2, cell_vector::const_iterator _begin,
     *_J = rot * *_J;
 
   if (_H) {
-    hessian h1 = *_H;
-    hessian h2 = _H->transpose();
-    *_H = (h1 + h2) * 0.5;
-    *_H = rot.transpose() * *_H * rot;
+    // fix the lazy ordering from above
+    hessian H = *_H;
+    H(2, 2) = H(5);            // theta theta
+    H(1, 2) = H(2, 1) = H(4);  // y theta
+    H(1, 1) = H(3);            // y y
+    H(2, 0) = H(0, 2);         // x theta
+    H(1, 0) = H(0, 1);         // x y
+
+    // apply the rotation
+    *_H = rot.transpose() * H * rot;
   }
 
   return sum;

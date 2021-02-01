@@ -33,31 +33,78 @@ INSTANTIATE_TEST_SUITE_P(/**/, rotation, Range(0., 1.5, 0.1));
 TEST_P(rotation, x_grad) {
   pose_gradient::parameter param{3, false};
   pose_gradient pg(make_ship(), param);
+  pose_gradient::pose se2(0, 0, GetParam());
+  pose_gradient::jacobian J;
 
-  // we will swipe through yy
-  double sq_error = 0, left_cost, right_cost;
-  for (size_t yy = 0; yy != 20; ++yy) {
-    // setup the cell-vector with the query
-    cell_vector center_cells{cell(1, yy)};
-    cell_vector left_cells{cell(0, yy)};
-    cell_vector right_cells{cell{2, yy}};
+  // mean squared error
+  double mse = 0;
+  double left_cost, right_cost;
 
-    // query the data
-    pose_gradient::pose se2(0, 0, GetParam());
-    pose_gradient::jacobian J;
+  for (size_t xx = 1; xx != 20; ++xx) {
+    for (size_t yy = 0; yy != 20; ++yy) {
+      // setup the cell-vector with the query
+      cell_vector center_cells{cell(xx, yy)};
+      cell_vector left_cells{cell(xx - 1, yy)};
+      cell_vector right_cells{cell{xx + 1, yy}};
 
-    pg.get_cost(se2, center_cells.cbegin(), center_cells.cend(), &J, nullptr);
-    left_cost = pg.get_cost(se2, left_cells.cbegin(), left_cells.cend(),
-                            nullptr, nullptr);
-    right_cost = pg.get_cost(se2, right_cells.cbegin(), right_cells.cend(),
-                             nullptr, nullptr);
+      // query the data
+      pg.get_cost(se2, center_cells.cbegin(), center_cells.cend(), &J, nullptr);
+      left_cost = pg.get_cost(se2, left_cells.cbegin(), left_cells.cend(),
+                              nullptr, nullptr);
+      right_cost = pg.get_cost(se2, right_cells.cbegin(), right_cells.cend(),
+                               nullptr, nullptr);
 
-    // compute the error
-    const auto diff = (right_cost - left_cost) / 2.;
-    const auto error = diff - J.x();
-    sq_error += std::pow(error, 2);
-    EXPECT_LE(error, 0.5);
+      // compute the error
+      const auto diff = (right_cost - left_cost) / 2.;
+      const auto error = diff - J.x();
+
+      // we expect that we are "good enough". the value is rather high, since
+      // there are still some discretesation issues.
+      EXPECT_LE(error, 0.5) << xx << ", " << yy;
+      mse += std::pow(error, 2);
+    }
   }
-  EXPECT_LE(sq_error, 0.5);
+  mse /= (19 * 20);
+  EXPECT_LE(mse, 0.1);
 }
+
+// copy and pasted from above - with the  y-values now under test
+TEST_P(rotation, y_grad) {
+  pose_gradient::parameter param{3, false};
+  pose_gradient pg(make_ship(), param);
+  pose_gradient::pose se2(0, 0, GetParam());
+  pose_gradient::jacobian J;
+
+  // mean squared error
+  double mse = 0;
+  double left_cost, right_cost;
+
+  for (size_t xx = 0; xx != 20; ++xx) {
+    for (size_t yy = 1; yy != 20; ++yy) {
+      // setup the cell-vector with the query
+      cell_vector center_cells{cell(xx, yy)};
+      cell_vector left_cells{cell(xx, yy - 1)};
+      cell_vector right_cells{cell{xx, yy + 1}};
+
+      // query the data
+      pg.get_cost(se2, center_cells.cbegin(), center_cells.cend(), &J, nullptr);
+      left_cost = pg.get_cost(se2, left_cells.cbegin(), left_cells.cend(),
+                              nullptr, nullptr);
+      right_cost = pg.get_cost(se2, right_cells.cbegin(), right_cells.cend(),
+                               nullptr, nullptr);
+
+      // compute the error
+      const auto diff = (right_cost - left_cost) / 2.;
+      const auto error = diff - J.y();
+
+      // we expect that we are "good enough". the value is rather high, since
+      // there are still some discretesation issues.
+      EXPECT_LE(error, 0.5) << xx << ", " << yy;
+      mse += std::pow(error, 2);
+    }
+  }
+  mse /= (19 * 20);
+  EXPECT_LE(mse, 0.1);
+}
+
 }  // namespace

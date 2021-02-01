@@ -34,9 +34,6 @@
 
 namespace dpose_core {
 
-/// @brief contains our open-cv related operations
-namespace internal {
-
 /// @brief open-cv specific data-types
 using cell_type = cv::Point2i;
 using cell_vector_type = std::vector<cell_type>;
@@ -54,9 +51,9 @@ _to_open_cv(const polygon& _footprint) noexcept {
 
 /// @brief computes a cost-image based on the polygon
 /// @param _cells corners of a sparse polygon
-/// @param _param additional parameters
+/// @param _padding additional padding
 cv::Mat
-_get_cost(const polygon& _fp, const parameter& _param) {
+_get_cost(const polygon& _fp, size_t& _padding) {
   // convert the eigen-polygon to opencv-cells
   const auto _cells = _to_open_cv(_fp);
 
@@ -68,8 +65,8 @@ _get_cost(const polygon& _fp, const parameter& _param) {
 
   // apply our padding
   cv::Size bb_size = bb.size();
-  bb_size.width += (_param.padding * 2);
-  bb_size.height += (_param.padding * 2);
+  bb_size.width += (_padding * 2);
+  bb_size.height += (_padding * 2);
 
   // setup the image and draw the cells
   cv::Mat image(bb_size, cv::DataType<uint8_t>::type, cv::Scalar(255));
@@ -99,7 +96,7 @@ _get_cost(const polygon& _fp, const parameter& _param) {
   assert(cv::countNonZero(image) > 0 && "filling of the mask failed");
 
   constexpr float offset = 1;
-  const auto kernel_size = _param.padding * 2 + 1;
+  const auto kernel_size = _padding * 2 + 1;
 
   // paint a blurry polygon
   cv::Mat smoothen(bb_size, cv::DataType<float>::type, cv::Scalar(0));
@@ -274,96 +271,61 @@ _angular_derivative(cv::InputArray _image,
   return output;
 }
 
-/// @brief will generate the jacobian data based on the cost_data
-jacobian_data
-_init_jacobian(const cost_data& _data) {
-  jacobian_data J;
-  // get our three derivatives
-  cv::Sobel(_data.cost, J.d_x, cv::DataType<float>::type, 1, 0, 5, 1. / 64.);
-  cv::Sobel(_data.cost, J.d_y, cv::DataType<float>::type, 0, 1, 5, 1. / 64.);
-  J.d_z = _angular_derivative(_data.cost, _data.center);
-
-  // safe the jacobians if compiled in debug mode
-  assert(cv::imwrite("/tmp/d_x.jpg", J.d_x * 10 + 100));
-  assert(cv::imwrite("/tmp/d_y.jpg", J.d_y * 10 + 100));
-  assert(cv::imwrite("/tmp/d_theta.jpg", J.d_z * 10 + 100));
-
-  return J;
-}
-
-/// @brief will generate the hessian data based on the jacobian data
-hessian_data
-_init_hessian(const cost_data& _data, const jacobian_data& _J,
-              const Eigen::Vector2i& _center) {
-  hessian_data H;
-  // todo this is crap
-  // second derivative to x
-  cv::Sobel(_J.d_x, H.d_x_x, cv::DataType<float>::type, 1, 0, 5, 1. / 4096.);
-  cv::Sobel(_J.d_y, H.d_y_x, cv::DataType<float>::type, 1, 0, 5, 1. / 4096.);
-  cv::Sobel(_J.d_z, H.d_z_x, cv::DataType<float>::type, 1, 0, 5, 1. / 4096.);
-
-  // safe the hessians if compiled in debug mode
-  assert(cv::imwrite("/tmp/d_x_x.jpg", H.d_x_x * 10 + 100));
-  assert(cv::imwrite("/tmp/d_y_x.jpg", H.d_y_x * 10 + 100));
-  assert(cv::imwrite("/tmp/d_theta_x.jpg", H.d_z_x * 10 + 100));
-
-  // second derivative to y
-  cv::Sobel(_J.d_x, H.d_x_y, cv::DataType<float>::type, 0, 1, 5, 1. / 4096.);
-  cv::Sobel(_J.d_y, H.d_y_y, cv::DataType<float>::type, 0, 1, 5, 1. / 4096.);
-  cv::Sobel(_J.d_z, H.d_z_y, cv::DataType<float>::type, 0, 1, 5, 1. / 4096.);
-
-  // safe the hessians if compiled in debug mode
-  assert(cv::imwrite("/tmp/d_x_y.jpg", H.d_x_y * 10 + 100));
-  assert(cv::imwrite("/tmp/d_y_y.jpg", H.d_y_y * 10 + 100));
-  assert(cv::imwrite("/tmp/d_theta_y.jpg", H.d_z_y * 10 + 100));
-
-  // second derivative to theta
-  H.d_x_z = _angular_derivative(_J.d_x, _center) * 1. / 64.;
-  H.d_y_z = _angular_derivative(_J.d_y, _center) * 1. / 64.;
-  H.d_z_z = _angular_derivative(_J.d_z, _center) * 1. / 64.;
-
-  // safe the hessians if compiled in debug mode
-  assert(cv::imwrite("/tmp/d_x_theta.jpg", H.d_x_z * 10 + 100));
-  assert(cv::imwrite("/tmp/d_y_theta.jpg", H.d_y_z * 10 + 100));
-  assert(cv::imwrite("/tmp/d_theta_theta.jpg", H.d_z_z * 10 + 100));
-
-  return H;
-}
-
-// function is exposed to the user
-data
-init_data(const polygon& _footprint, const parameter& _param) {
-  // we need an area
-  if (_footprint.cols() < 3)
-    throw std::runtime_error("footprint must contain at least three points");
-
-  data out;
-
+cost_data::cost_data(const polygon& _footprint, size_t _padding) {
   // get the center
-  const Eigen::Vector2i padding(_param.padding, _param.padding);
-  out.core.center = padding - _footprint.rowwise().minCoeff();
+  const cell padding(_padding, _padding);
+  center = padding - _footprint.rowwise().minCoeff();
 
   // shift everything by the center, so we just have positive values
-  polygon footprint = _footprint.colwise() + out.core.center;
-  assert(footprint.array().minCoeff() == static_cast<int>(_param.padding) &&
+  polygon footprint = _footprint.colwise() + center;
+  assert(footprint.array().minCoeff() == static_cast<int>(_padding) &&
          "footprint shifting failed");
 
   // get the cost image
-  out.core.cost = _get_cost(footprint, _param);
+  cost = _get_cost(footprint, _padding);
   // safe the image if we are running in debug mode (and scale the images)
-  assert(cv::imwrite("/tmp/cost.jpg", out.core.cost * 10));
+  assert(cv::imwrite("/tmp/cost.jpg", cost * 10));
 
-  // get the derivatives
-  out.J = _init_jacobian(out.core);
-
-  // the hessian data might be optional
-  if (_param.generate_hessian)
-    out.H = _init_hessian(out.core, out.J, out.core.center);
-
-  return out;
+  // create the bounding box around the original footprint
+  box = _to_rectangle(cost).colwise() - center;
 }
 
-}  // namespace internal
+jacobian_data::jacobian_data(const cost_data& _data) {
+  cv::Sobel(_data.cost, d_x, cv::DataType<float>::type, 1, 0, 5, 1. / 64.);
+  cv::Sobel(_data.cost, d_y, cv::DataType<float>::type, 0, 1, 5, 1. / 64.);
+  d_z = _angular_derivative(_data.cost, _data.center);
+
+  // safe the jacobians if compiled in debug mode
+  assert(cv::imwrite("/tmp/d_x.jpg", d_x * 10 + 100));
+  assert(cv::imwrite("/tmp/d_y.jpg", d_y * 10 + 100));
+  assert(cv::imwrite("/tmp/d_theta.jpg", d_z * 10 + 100));
+}
+
+hessian_data::hessian_data(const cost_data& _cost, const jacobian_data& _J) {
+  // second derivative to x
+  cv::Sobel(_J.d_x, d_x_x, cv::DataType<float>::type, 1, 0, 5, 1. / 4096.);
+  cv::Sobel(_J.d_y, d_y_x, cv::DataType<float>::type, 1, 0, 5, 1. / 4096.);
+  cv::Sobel(_J.d_z, d_z_x, cv::DataType<float>::type, 1, 0, 5, 1. / 4096.);
+
+  // safe the hessians if compiled in debug mode
+  assert(cv::imwrite("/tmp/d_x_x.jpg", d_x_x * 10 + 100));
+  assert(cv::imwrite("/tmp/d_y_x.jpg", d_y_x * 10 + 100));
+  assert(cv::imwrite("/tmp/d_theta_x.jpg", d_z_x * 10 + 100));
+
+  // second derivative to y
+  cv::Sobel(_J.d_y, d_y_y, cv::DataType<float>::type, 0, 1, 5, 1. / 4096.);
+  cv::Sobel(_J.d_z, d_y_z, cv::DataType<float>::type, 0, 1, 5, 1. / 4096.);
+
+  // safe the hessians if compiled in debug mode
+  assert(cv::imwrite("/tmp/d_y_y.jpg", d_y_y * 10 + 100));
+  assert(cv::imwrite("/tmp/d_theta_y.jpg", d_z_y * 10 + 100));
+
+  // second derivative to theta
+  d_z_z = _angular_derivative(_J.d_z, _cost.center) * 1. / 64.;
+
+  // safe the hessians if compiled in debug mode
+  assert(cv::imwrite("/tmp/d_theta_theta.jpg", d_z_z * 10 + 100));
+}
 
 using transform_type = Eigen::Isometry2d;
 
@@ -381,27 +343,27 @@ is_inside(const Eigen::Vector2d& _max, const rectangle<double>& _box) noexcept {
 }
 
 pose_gradient::pose_gradient(const polygon& _footprint,
-                             const parameter& _param) :
-    data_(internal::init_data(_footprint, _param)) {}
+                             const parameter& _param) {
+  // we need an area
+  if (_footprint.cols() < 3)
+    throw std::runtime_error("footprint must contain at least three points");
+
+  data_.core = cost_data(_footprint, _param.padding);
+  data_.J = jacobian_data(data_.core);
+  data_.H = hessian_data(data_.core, data_.J);
+}
 
 float
 pose_gradient::get_cost(const pose& _se2, cell_vector::const_iterator _begin,
                         cell_vector::const_iterator _end, jacobian* _J,
                         hessian* _H) const {
-  using rectangle_d = rectangle<double>;
-  using namespace internal;
-
   // note: all computations are done in the cell space.
   // indedices are map (m), baselink (b) and kernel (k).
   // get the transform from map (m) to kernel (k)
+  const auto& center = data_.core.get_center();
   const transform_type m_to_b = to_eigen(_se2.x(), _se2.y(), _se2.z());
-  const transform_type b_to_k =
-      to_eigen(-data_.core.center.x(), -data_.core.center.y(), 0);
+  const transform_type b_to_k = to_eigen(-center.x(), -center.y(), 0);
   const transform_type m_to_k = m_to_b * b_to_k;
-
-  const rectangle_d k_kernel_bb = _to_rectangle(data_.core.cost).cast<double>();
-  const rectangle_d m_kernel_bb =
-      (m_to_k * k_kernel_bb).array().round().matrix();
 
   float sum = 0;
 
@@ -413,7 +375,8 @@ pose_gradient::get_cost(const pose& _se2, cell_vector::const_iterator _begin,
     *_H = hessian::Zero();
 
   const transform_type k_to_m = m_to_k.inverse();
-  const Eigen::Array2i bounds(data_.core.cost.cols, data_.core.cost.rows);
+  const Eigen::Array2i bounds(data_.core.get_data().cols,
+                              data_.core.get_data().rows);
 
   for (; _begin != _end; ++_begin) {
     // convert to the kernel frame
@@ -425,14 +388,14 @@ pose_gradient::get_cost(const pose& _se2, cell_vector::const_iterator _begin,
       continue;
 
     // update our outputs
-    sum += data_.core.cost.at<float>(k_cell(1), k_cell(0));
+    sum += data_.core.at(k_cell(1), k_cell(0));
 
     // J and H are optional
     if (_J)
-      *_J -= data_.J.get(k_cell(1), k_cell(0));
+      *_J -= data_.J.at(k_cell(1), k_cell(0));
 
     if (_H)
-      *_H -= data_.H.get(k_cell(1), k_cell(0));
+      *_H -= data_.H.at(k_cell(1), k_cell(0));
   }
 
   // flip the derivate back to the original frame.
@@ -452,13 +415,6 @@ pose_gradient::get_cost(const pose& _se2, cell_vector::const_iterator _begin,
   }
 
   return sum;
-}
-
-rectangle<int>
-pose_gradient::get_bounding_box() const {
-  const rectangle<int> box = internal::_to_rectangle(data_.core.cost);
-  const cell origin(data_.core.center.x(), data_.core.center.y());
-  return rectangle<int>{box.colwise() - origin};
 }
 
 }  // namespace dpose_core

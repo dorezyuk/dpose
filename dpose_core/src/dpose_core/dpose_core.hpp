@@ -50,67 +50,129 @@ to_rectangle(const _T& w, const _T& h) noexcept {
   return box;
 }
 
-namespace internal {
+/// @brief polygon where first row holds the x, and second row y values.
+using polygon = Eigen::Matrix<int, 2UL, Eigen::Dynamic>;
+
+using cell = Eigen::Vector2i;
+using cell_vector = std::vector<cell>;
+
+// forward-decleration so we can befriend these stuctures together.
+struct jacobian_data;
+struct hessian_data;
 
 /// @brief struct holding the "core" data - just cost matrix and center cell
 struct cost_data {
-  cv::Mat cost;            ///< cost matrix
-  Eigen::Vector2i center;  ///< center cell
+  // both need access to the raw data
+  friend jacobian_data;
+  friend hessian_data;
+
+  cost_data() = default;
+  cost_data(const polygon& _footprint, size_t _padding);
+
+  inline float
+  at(int _y, int _x) const {
+    return cost.at<float>(_y, _x);
+  }
+
+  inline const cv::Mat&
+  get_data() const noexcept {
+    return cost;
+  }
+
+  inline const cell&
+  get_center() const noexcept {
+    return center;
+  }
+
+  inline const rectangle<int>&
+  get_box() const noexcept {
+    return box;
+  }
+
+private:
+  cv::Mat cost;        ///< cost matrix
+  cell center;         ///< center cell
+  rectangle<int> box;  ///< the bounding box
 };
 
-/// @brief struct holding the data required for the jacobians
-/// Use jacobian_data::get to get the jacobian for a pixel.
+/**
+ * @brief struct holding the data required for the jacobians.
+ *
+ * Use jacobian_data::at to get the jacobian for a pixel.
+ * The Jacobian has the form \f$ [f_x, f_y, f_{\theta}]^T \f$, where the
+ * \f$ f_x \f$ represents the partial derivative of the cost f with respect to
+ * x.
+ */
 struct jacobian_data {
-  /*
-   * the jacobian has the form
-   * [x, y, z]^T
-   */
+  // the Hessian is build on top of the Jacobian
+  friend hessian_data;
+
+  jacobian_data() = default;
+  explicit jacobian_data(const cost_data& _cost);
+
+  /// @brief the data-structure for the user.
   using jacobian = Eigen::Vector3d;
 
   /// @brief returns the jacobian for given x and y.
+  /// @param _x column of the pixel.
+  /// @param _y row 0f the pixel.
   inline jacobian
-  get(int _y, int _x) const {
+  at(int _y, int _x) const {
     return {static_cast<double>(d_x.at<float>(_y, _x)),
             static_cast<double>(d_y.at<float>(_y, _x)),
             static_cast<double>(d_z.at<float>(_y, _x))};
   }
 
+private:
   cv::Mat d_x;  ///< derivative of the cost in x
   cv::Mat d_y;  ///< derivative of the cost in y
   cv::Mat d_z;  ///< derivative of the cost in z (theta)
 };
 
-/// @brief struct holding the data required for the hessians
-/// Use hessian_data::get to get the hessian for a pixel
+/**
+ * @brief struct holding the data required for the hessians.
+ *
+ * Use hessian_data::get to get the hessian for a pixel.
+ * The Hessian has the form
+ * \f[
+ * \begin{bmatrix}
+ * f_{x, x} & f_{x, y} & f_{x, \theta} \\
+ * f_{y, x} & f_{y, y} & f_{y, \theta} \\
+ * f_{\theta, x} & f_{theta, y} & f_{\theta \theta}
+ * \end{bmatrix}
+ * \f]
+ *
+ * \f$ f_{x y} \f$ indicates the partial derivative of the cost f with respect
+ * to x and y. The Hessian is symmetric.
+ */
 struct hessian_data {
-  /*
-   * the hessian has the form
-   * [[x_x, x_y, x_z],
-   *  [y_x, y_y, y_z],
-   *  [z_x, z_y, z_z]]
-   */
+  hessian_data() = default;
+  hessian_data(const cost_data& _cost, const jacobian_data& _jacobian);
+
+  /// @brief the data-structure for the user.
   using hessian = Eigen::Matrix3d;
 
   /// @brief returns the hessian for given x and y.
+  /// @param _x column of the pixel.
+  /// @param _y row 0f the pixel.
   inline hessian
-  get(int _y, int _x) const {
+  at(int _y, int _x) const {
+    // todo check if this allocation hurts us...
     hessian H;
     // clang-format off
-    H << d_x_x.at<float>(_y, _x), d_x_y.at<float>(_y, _x), d_x_z.at<float>(_y, _x),
+    H << d_x_x.at<float>(_y, _x), d_y_x.at<float>(_y, _x), d_z_x.at<float>(_y, _x),
          d_y_x.at<float>(_y, _x), d_y_y.at<float>(_y, _x), d_y_z.at<float>(_y, _x),
-         d_z_x.at<float>(_y, _x), d_z_y.at<float>(_y, _x), d_z_z.at<float>(_y, _x);
+         d_z_x.at<float>(_y, _x), d_y_z.at<float>(_y, _x), d_z_z.at<float>(_y, _x);
     // clang-format on
     return H;
   }
 
+private:
   cv::Mat d_x_x;  ///< derivative of the cost in x,x
-  cv::Mat d_x_y;  ///< derivative of the cost in x,y
-  cv::Mat d_x_z;  ///< derivative of the cost in x,theta
   cv::Mat d_y_x;  ///< derivative of the cost in y,x
+  cv::Mat d_z_x;  ///< derivative of the cost in theta,x
   cv::Mat d_y_y;  ///< derivative of the cost in y,y
   cv::Mat d_y_z;  ///< derivative of the cost in y,theta
-  cv::Mat d_z_x;  ///< derivative of the cost in theta,x
-  cv::Mat d_z_y;  ///< derivative of the cost in theta,y
   cv::Mat d_z_z;  ///< derivative of the cost in theta,theta
 };
 
@@ -127,38 +189,22 @@ struct parameter {
   bool generate_hessian = false;
 };
 
-/// @brief polygon where first row holds the x, and second row y values.
-using polygon = Eigen::Matrix<int, 2UL, Eigen::Dynamic>;
-
-/// @brief constructs cost and its derivatives from the inputs
-/// @param _footprint the footprint (may or may not be closed)
-/// @param _param parameters for the operation
-/// @throws std::runtime_error if the _footprint is ill-formed
-/// @note will safe some images to "/tmp" if compiled as assert enabled
-data
-init_data(const polygon& _footprint, const parameter& _param);
-
-}  // namespace internal
-
-using cell = Eigen::Vector2i;
-using cell_vector = std::vector<cell>;
-
 /**
  * @brief computes a pose-gradient from the given costmap
  *
  * The input (and output) is in cell-domain (not metric).
  */
 struct pose_gradient {
-  using parameter = internal::parameter;
-  using polygon = internal::polygon;
-
   // the three arguments for get_pose
-  using jacobian = internal::jacobian_data::jacobian;
-  using hessian = internal::hessian_data::hessian;
+  using jacobian = jacobian_data::jacobian;
+  using hessian = hessian_data::hessian;
   using pose = Eigen::Vector3d;
 
   /// @brief sets up internal data based on _footprint and _param.
-  /// @see internal::init_data for details.
+  /// @param _footprint the footprint (may or may not be closed)
+  /// @param _param parameters for the operation
+  /// @throws std::runtime_error if the _footprint is ill-formed
+  /// @note will safe some images to "/tmp" if compiled as assert enabled
   pose_gradient(const polygon& _footprint, const parameter& _param);
   pose_gradient() = default;
 
@@ -170,11 +216,13 @@ struct pose_gradient {
   get_cost(const pose& _se2, cell_vector::const_iterator _begin,
            cell_vector::const_iterator _end, jacobian* _J, hessian* _H) const;
 
-  rectangle<int>
-  get_bounding_box() const;
+  inline const rectangle<int>&
+  get_box() const noexcept {
+    return data_.core.get_box();
+  }
 
 private:
-  internal::data data_;
+  data data_;
 };
 
 }  // namespace dpose_core

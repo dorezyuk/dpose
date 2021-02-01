@@ -181,10 +181,11 @@ private:
 };
 
 /// @brief POD holding all the data required for optimization
+/// This POD is owned by the pose_gradient (see below)
 struct data {
-  cost_data core;
-  jacobian_data J;
-  hessian_data H;
+  cost_data core;   ///< hold the data related to the costs
+  jacobian_data J;  ///< holds the data related to the Jacobian
+  hessian_data H;   ///< holds the data related to the Hessian
 };
 
 /**
@@ -222,9 +223,9 @@ struct pose_gradient {
   get_cost(const pose& _se2, cell_vector::const_iterator _begin,
            cell_vector::const_iterator _end, jacobian* _J, hessian* _H) const;
 
-  inline const rectangle<int>&
-  get_box() const noexcept {
-    return data_.core.get_box();
+  inline const data&
+  get_data() const noexcept {
+    return data_;
   }
 
 private:

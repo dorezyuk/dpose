@@ -345,6 +345,7 @@ is_inside(const Eigen::Vector2d& _max, const rectangle<double>& _box) noexcept {
 pose_gradient::pose_gradient(const polygon& _footprint,
                              const parameter& _param) {
   // we need an area
+  // todo maybe add a check if the footprint defines a real area...
   if (_footprint.cols() < 3)
     throw std::runtime_error("footprint must contain at least three points");
 
@@ -393,10 +394,10 @@ pose_gradient::get_cost(const pose& _se2, cell_vector::const_iterator _begin,
 
     // J and H are optional
     if (_J)
-      *_J -= data_.J.at(k_cell(1), k_cell(0));
+      *_J += data_.J.at(k_cell(1), k_cell(0));
 
     if (_H)
-      *_H -= data_.H.at(k_cell(1), k_cell(0));
+      *_H += data_.H.at(k_cell(1), k_cell(0));
   }
 
   // flip the derivate back to the original frame.
@@ -405,8 +406,12 @@ pose_gradient::get_cost(const pose& _se2, cell_vector::const_iterator _begin,
   rot(0, 2) = 0;
   rot(1, 2) = 0;
 
-  if (_J)
+  if (_J){
+    // std::cout << _J->transpose() << std::endl << std::endl;
+    // std::cout << rot << std::endl << std::endl;
     *_J = rot * *_J;
+    // std::cout << _J->transpose() << std::endl << std::endl;
+  }
 
   if (_H) {
     hessian h1 = *_H;

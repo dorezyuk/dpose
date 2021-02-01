@@ -5,7 +5,6 @@
 #include <stdexcept>
 
 namespace dpose_core {
-namespace internal {
 
 polygon
 make_footprint(costmap_2d::LayeredCostmap& _cm) {
@@ -78,5 +77,4 @@ to_rays(const rectangle<int>& _rect) noexcept {
   return rays;
 }
 
-}  // namespace internal
 }  // namespace dpose_core

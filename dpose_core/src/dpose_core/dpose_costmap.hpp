@@ -33,7 +33,6 @@
 #include <unordered_map>
 
 namespace dpose_core {
-namespace internal {
 
 /// @brief generates a polygon from a costmap_2d::LayeredCostmap.
 /// @param _cm costmap - which we *don't* alter.
@@ -76,8 +75,6 @@ using cell_rays = std::unordered_map<int, cell_interval>;
 /// @param _rect the rectangle
 cell_rays
 to_rays(const rectangle<int>& _rect) noexcept;
-
-}  // namespace internal
 
 }  // namespace dpose_core
 

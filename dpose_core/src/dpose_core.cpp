@@ -318,7 +318,7 @@ hessian_data::hessian_data(const cost_data& _cost, const jacobian_data& _J) {
 
   // safe the hessians if compiled in debug mode
   assert(cv::imwrite("/tmp/d_y_y.jpg", d_y_y * 10 + 100));
-  assert(cv::imwrite("/tmp/d_theta_y.jpg", d_z_y * 10 + 100));
+  assert(cv::imwrite("/tmp/d_theta_y.jpg", d_y_z * 10 + 100));
 
   // second derivative to theta
   d_z_z = _angular_derivative(_J.d_z, _cost.center) * 1. / 64.;

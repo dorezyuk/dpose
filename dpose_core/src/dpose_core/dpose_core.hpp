@@ -53,6 +53,7 @@ to_rectangle(const _T& w, const _T& h) noexcept {
 /// @brief polygon where first row holds the x, and second row y values.
 using polygon = Eigen::Matrix<int, 2UL, Eigen::Dynamic>;
 
+// todo add alignment
 using cell = Eigen::Vector2i;
 using cell_vector = std::vector<cell>;
 
@@ -212,6 +213,8 @@ struct pose_gradient {
   pose_gradient() = default;
 
   /// @brief returns the cost for the given se2 pose
+  /// @param[in] _begin begin of a cell-vector with lethal costs
+  /// @param[in] _end end of a cell-vector with lethal costs
   /// @param[in] _se2 pose of interest. should be in the global frame.
   /// @param[out] _J optional jacobian. will be ignored if nullptr
   /// @param[out] _H optional hessian. will be ignored if nullptr

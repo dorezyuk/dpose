@@ -377,24 +377,50 @@ pose_gradient::get_cost(const pose& _se2, cell_vector::const_iterator _begin,
     *_H = hessian::Zero();
 
   const transform_type k_to_m = m_to_k.inverse();
-  const Eigen::Array2i bounds(data_.core.get_data().cols,
+  const Eigen::Array2d bounds(data_.core.get_data().cols,
                               data_.core.get_data().rows);
+
+  Eigen::Array2d k_cell;
+  Eigen::Array2i k_lower, k_upper;
+  Eigen::Matrix2d m;
+  Eigen::Vector2d c_rel, c_rel_x, c_rel_y;
 
   for (; _begin != _end; ++_begin) {
     // convert to the kernel frame
-    const cell k_cell =
-        (k_to_m * _begin->cast<double>()).array().round().cast<int>().matrix();
+    k_cell = (k_to_m * _begin->cast<double>()).array();
 
-    // check if k_cell is valid
-    if ((k_cell.array() < 0).any() || (k_cell.array() >= bounds).any())
+    // interpolate the cost: get the cell-indices of interest.
+    k_upper = k_cell.round().cast<int>();
+    k_lower = k_upper - 1;
+
+    // check if the interpolated points are valid
+    if ((k_lower < 0).any() || (k_upper >= bounds.cast<int>()).any())
       continue;
 
-    // update our outputs
-    sum += data_.core.at(k_cell(1), k_cell(0));
+    // c_rel is the normalized point w.r.t a cell.
+    // c_rel is defined in [0, 1]^2
+    c_rel = k_cell.array() - k_upper.cast<double>() + 0.5;
+    c_rel_x << 1 - c_rel(0), c_rel(0);
+    c_rel_y << 1 - c_rel(1), c_rel(1);
+
+    // m is [[f_00, f_01], [f_10, f_11]]
+    m << data_.core.at(k_lower(1), k_lower(0)),
+        data_.core.at(k_lower(1), k_upper(0)),
+        data_.core.at(k_upper(1), k_lower(0)),
+        data_.core.at(k_upper(1), k_upper(0));
+    // update the cost
+    sum += c_rel_x.transpose() * m * c_rel_y;
 
     // J and H are optional
-    if (_J)
-      *_J += data_.J.at(k_cell(1), k_cell(0));
+    if (_J) {
+      for (size_t ii = 0; ii != 3; ++ii) {
+        m << data_.J.at(ii, k_lower(1), k_lower(0)),
+            data_.J.at(ii, k_lower(1), k_upper(0)),
+            data_.J.at(ii, k_upper(1), k_lower(0)),
+            data_.J.at(ii, k_upper(1), k_upper(0));
+        (*_J)(ii) += c_rel_x.transpose() * m * c_rel_y;
+      }
+    }
 
     if (_H)
       *_H += data_.H.at(k_cell(1), k_cell(0));
@@ -406,7 +432,7 @@ pose_gradient::get_cost(const pose& _se2, cell_vector::const_iterator _begin,
   rot(0, 2) = 0;
   rot(1, 2) = 0;
 
-  if (_J){
+  if (_J) {
     // std::cout << _J->transpose() << std::endl << std::endl;
     // std::cout << rot << std::endl << std::endl;
     *_J = rot * *_J;

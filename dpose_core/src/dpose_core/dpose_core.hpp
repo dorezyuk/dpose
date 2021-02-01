@@ -73,9 +73,16 @@ struct cost_data {
   /// @brief returns the cost at the given x and y.
   /// @param _x column of the pixel.
   /// @param _y row 0f the pixel.
-  inline float
+  inline double
   at(int _y, int _x) const {
-    return cost.at<float>(_y, _x);
+    return static_cast<double>(cost.at<float>(_y, _x));
+  }
+
+  /// @brief returns the cost at the given pixel.
+  /// @param _cell coordinate of the pixel.
+  inline double
+  at(const cell& _cell) const {
+    return at(_cell.y(), _cell.x());
   }
 
   inline const cv::Mat&
@@ -127,6 +134,23 @@ struct jacobian_data {
             static_cast<double>(d_z.at<float>(_y, _x))};
   }
 
+  /// @brief returns the jacobian at the given pixel.
+  /// @param _cell coordinate of the pixel.
+  inline jacobian
+  at(const cell& _cell) const {
+    return at(_cell.y(), _cell.x());
+  }
+
+  inline double
+  at(size_t _z, int _y, int _x) const {
+    switch (_z) {
+      case 0: return static_cast<double>(d_x.at<float>(_y, _x)); break;
+      case 1: return static_cast<double>(d_y.at<float>(_y, _x)); break;
+      case 2: return static_cast<double>(d_z.at<float>(_y, _x)); break;
+      default: throw std::out_of_range("invalid z index");
+    }
+  }
+
 private:
   cv::Mat d_x;  ///< derivative of the cost in x
   cv::Mat d_y;  ///< derivative of the cost in y
@@ -169,6 +193,13 @@ struct hessian_data {
          d_z_x.at<float>(_y, _x), d_y_z.at<float>(_y, _x), d_z_z.at<float>(_y, _x);
     // clang-format on
     return H;
+  }
+
+  /// @brief returns the hessian at the given pixel.
+  /// @param _cell coordinate of the pixel.
+  inline hessian
+  at(const cell& _cell) const {
+    return at(_cell.y(), _cell.x());
   }
 
 private:

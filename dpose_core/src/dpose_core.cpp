@@ -304,9 +304,9 @@ jacobian_data::jacobian_data(const cost_data& _data) {
 
 hessian_data::hessian_data(const cost_data& _cost, const jacobian_data& _J) {
   // second derivative to x
-  cv::Sobel(_J.d_x, d_x_x, cv::DataType<float>::type, 1, 0, 5, 1. / 4096.);
-  cv::Sobel(_J.d_y, d_y_x, cv::DataType<float>::type, 1, 0, 5, 1. / 4096.);
-  cv::Sobel(_J.d_z, d_z_x, cv::DataType<float>::type, 1, 0, 5, 1. / 4096.);
+  cv::Sobel(_J.d_x, d_x_x, cv::DataType<float>::type, 1, 0, 5, 1. / 256.);
+  cv::Sobel(_J.d_y, d_y_x, cv::DataType<float>::type, 1, 0, 5, 1. / 256.);
+  cv::Sobel(_J.d_z, d_z_x, cv::DataType<float>::type, 1, 0, 5, 1. / 256.);
 
   // safe the hessians if compiled in debug mode
   assert(cv::imwrite("/tmp/d_x_x.jpg", d_x_x * 10 + 100));
@@ -314,8 +314,8 @@ hessian_data::hessian_data(const cost_data& _cost, const jacobian_data& _J) {
   assert(cv::imwrite("/tmp/d_theta_x.jpg", d_z_x * 10 + 100));
 
   // second derivative to y
-  cv::Sobel(_J.d_y, d_y_y, cv::DataType<float>::type, 0, 1, 5, 1. / 4096.);
-  cv::Sobel(_J.d_z, d_y_z, cv::DataType<float>::type, 0, 1, 5, 1. / 4096.);
+  cv::Sobel(_J.d_y, d_y_y, cv::DataType<float>::type, 0, 1, 5, 1. / 256.);
+  cv::Sobel(_J.d_z, d_y_z, cv::DataType<float>::type, 0, 1, 5, 1. / 256.);
 
   // safe the hessians if compiled in debug mode
   assert(cv::imwrite("/tmp/d_y_y.jpg", d_y_y * 10 + 100));
@@ -423,6 +423,7 @@ pose_gradient::get_cost(const pose& _se2, cell_vector::const_iterator _begin,
             data_.H.at(ii, k_lower(1), k_upper(0)),
             data_.H.at(ii, k_upper(1), k_upper(0));
         // note: we write out of order and fix this below
+        // eigen defaults to col-major ordering
         (*_H)(ii) += c_rel_x.transpose() * m * c_rel_y;
       }
     }
@@ -440,11 +441,12 @@ pose_gradient::get_cost(const pose& _se2, cell_vector::const_iterator _begin,
   if (_H) {
     // fix the lazy ordering from above
     hessian H = *_H;
+    // std::cout << "original\n" << *_H << std::endl;
     H(2, 2) = H(5);            // theta theta
     H(1, 2) = H(2, 1) = H(4);  // y theta
     H(1, 1) = H(3);            // y y
-    H(2, 0) = H(0, 2);         // x theta
-    H(1, 0) = H(0, 1);         // x y
+    H(0, 2) = H(2, 0);         // x theta
+    H(0, 1) = H(1, 0);         // x y
 
     // apply the rotation
     *_H = rot.transpose() * H * rot;

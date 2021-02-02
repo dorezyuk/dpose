@@ -19,6 +19,11 @@
   <!-- non-ros-related libs -->
   <depend>eigen</depend>
   <depend>coinor-libipopt-dev</depend>
+  <!-- below required libs to use ipopt from package-config -->
+  <depend>gfortran</depend>
+  <depend>liblapack-dev</depend>
+  <depend>libblas-dev</depend>
+  <depend>pkg-config</depend>
 
   <test_depend>rostest</test_depend>
   <export>

@@ -23,20 +23,20 @@ make_ship() {
 
 namespace {
 
-struct rotation : public TestWithParam<double> {};
+struct rotation : public TestWithParam<double> {
+  pose_gradient pg;
+  pose_gradient::pose se2;
+  pose_gradient::jacobian J;
+
+  double mse = 0;  ///< mean squared error
+  double left_cost, right_cost;
+
+  rotation() : se2(0, 0, GetParam()), pg(make_ship(), {3, false}) {}
+};
 
 INSTANTIATE_TEST_SUITE_P(/**/, rotation, Range(0., 1.5, 0.1));
 
 TEST_P(rotation, x_grad) {
-  pose_gradient::parameter param{3, false};
-  pose_gradient pg(make_ship(), param);
-  pose_gradient::pose se2(0, 0, GetParam());
-  pose_gradient::jacobian J;
-
-  // mean squared error
-  double mse = 0;
-  double left_cost, right_cost;
-
   for (size_t xx = 1; xx != 20; ++xx) {
     for (size_t yy = 0; yy != 20; ++yy) {
       // setup the cell-vector with the query
@@ -67,14 +67,6 @@ TEST_P(rotation, x_grad) {
 
 // copy and pasted from above - with the  y-values now under test
 TEST_P(rotation, y_grad) {
-  pose_gradient::parameter param{3, false};
-  pose_gradient pg(make_ship(), param);
-  pose_gradient::pose se2(0, 0, GetParam());
-  pose_gradient::jacobian J;
-
-  double mse = 0;
-  double left_cost, right_cost;
-
   for (size_t xx = 0; xx != 20; ++xx) {
     for (size_t yy = 1; yy != 20; ++yy) {
       cell_vector center_cells{cell(xx, yy)};

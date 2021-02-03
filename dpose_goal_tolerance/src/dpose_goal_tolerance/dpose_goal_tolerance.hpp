@@ -28,180 +28,98 @@
 #include <dpose_core/dpose_costmap.hpp>
 
 #include <gpp_interface/pre_planning_interface.hpp>
-#include <angles/angles.h>
+// #include <angles/angles.h>
+
+#include <IpIpoptApplication.hpp>
+#include <IpTNLP.hpp>
 
 #include <Eigen/Dense>
 
-#include <algorithm>
-#include <cmath>
-#include <memory>
-#include <utility>
-#include <vector>
+// #include <algorithm>
+// #include <cmath>
+// #include <memory>
+// #include <utility>
+// #include <vector>
 
 namespace dpose_goal_tolerance {
-namespace internal {
 
-/**
- * @brief class for tolerance checks.
- *
- * Given the points _a and _b, this class will check if _a is within a
- * tolerance of _b.
- *
- * Pass one or multiple modes (tolerance::mode) to the c'tor, in order to
- * determine the "within" condition: the point _a is within the tolerance of _b
- * if all modes return true.
- */
-struct tolerance {
-  /// @brief diffent "modes"
-  enum class mode { NONE, ANGLE, SPHERE, BOX };
-
-  using pose = Eigen::Vector3d;
-
-  /**
-   * @brief noop-tolerance.
-   *
-   * All other tolerance concepts will extend this class.
-   * We will use dynmic polymorphism in order to implement different concepts.
-   */
-  struct none_tolerance {
-    virtual ~none_tolerance() = default;
-
-    inline virtual bool
-    within(const pose& _a __attribute__((unused)),
-           const pose& _b __attribute__((unused))) const noexcept {
-      return true;
-    }
-  };
-
-  /**
-   * @brief angle_tolerance
-   *
-   * interprets the last value of pose as a angle (in rads) and checks if the
-   * angular distance from _a to _b is within the tolerance.
-   */
-  struct angle_tolerance : public none_tolerance {
-    explicit angle_tolerance(double _tol);
-
-    inline bool
-    within(const pose& _a, const pose& _b) const noexcept final {
-      return std::abs(angles::shortest_angular_distance(_a.z(), _b.z())) < tol_;
-    }
-
-  private:
-    double tol_;  ///< tolerance in radians
-  };
-
-  /**
-   * @brief tolerance on a sphere
-   *
-   * The point _a is within the tolerance to _b, if their normed difference is
-   * below the radius_ parameter.
-   *
-   * @note: radius_ will be redrived as _norm.norm() from the
-   * tolerance::tolerance call.
-   */
-  struct sphere_tolerance : public none_tolerance {
-    explicit sphere_tolerance(const pose& _norm);
-
-    inline bool
-    within(const pose& _a, const pose& _b) const noexcept final {
-      return (_a - _b).norm() <= radius_;
-    }
-
-  private:
-    double radius_;  ///< radius in meters
-  };
-
-  /**
-   * @brief tolerance on a box
-   *
-   * The point _a is within the tolerance of _b if _b fits in a box of the size
-   * box_ * 2 centered around _a.
-   */
-  struct box_tolerance : public none_tolerance {
-    explicit box_tolerance(const pose& _box);
-
-    inline bool
-    within(const pose& _a, const pose& _b) const noexcept final {
-      return (((_a - _b).array().abs() - box_.array()) <= 0).all();
-    }
-
-  private:
-    pose box_;  ///< half size of the box
-  };
+/// g0: x^2 + y^2 < rad
+/// g1
+struct problem : public Ipopt::TNLP {
+  using index = Ipopt::Index;
+  using number = Ipopt::Number;
+  using pose = Eigen::Matrix<number, 3, 1>;
+  using pose_gradient = dpose_core::pose_gradient;
 
 private:
-  using tolerance_ptr = std::unique_ptr<none_tolerance>;
-  std::vector<tolerance_ptr> impl_;
+  using cell_vector = dpose_core::cell_vector;
+  using costmap = costmap_2d::Costmap2DROS;
 
-  static tolerance_ptr
-  factory(const mode& _m, const pose& _center) noexcept;
+  // input vars
+  number lin_tol_sq_ = 1;  ///< squared linear tolerance
+  number rot_tol_sq_ = 1;  ///< squared angular tolerance
+  pose pose_;              ///< initial pose
+
+  // cache
+  number cost_;                ///< cost of the current solution
+  pose_gradient::jacobian J_;  ///< jacobian of the current solution
+  pose_gradient::hessian H_;   ///< hessian of the current solution
+
+  // computation
+  pose_gradient pg_;            ///< the pose-gradient object
+  costmap *costmap_ = nullptr;  ///< pointer to a costmap
+  cell_vector lethal_cells_;    ///< vector of lethal cells
+
+  void
+  on_new_x(index _n, const number *_x);
 
 public:
-  tolerance() = default;
-  tolerance(const mode& _m, const pose& _center);
+  problem() = default;
+  problem(costmap &_map, const pose_gradient::parameter &_param);
 
-  // define the list-type. for now we dont want to use the
-  // std::initializer_list, since we want to be able to dynamically allocate the
-  // list.
-  using pair_type = std::pair<mode, pose>;
-  using list_type = std::vector<pair_type>;
-  tolerance(const list_type& _list);
+  inline void
+  init(const pose &_pose, number _lin_tol, number _rot_tol) noexcept;
 
-  inline bool
-  within(const pose& _a, const pose& _b) const noexcept {
-    // check all tolerances defined
-    return std::all_of(
-        impl_.begin(), impl_.end(),
-        [&](const tolerance_ptr& _impl) { return _impl->within(_a, _b); });
-  }
+  bool
+  get_nlp_info(index &_n, index &_m, index &_nonzero_jac_g,
+               index &_nonzero_h_lag, IndexStyleEnum &_index_style) override;
+
+  bool
+  get_bounds_info(index _n, number *_x_lower, number *_x_upper, index _m,
+                  number *_g_lower, number *_g_upper) override;
+  bool
+  get_starting_point(index _n, bool _init_x, number *_x, bool _init_z,
+                     number *_z_L, number *_z_U, index _m, bool _init_lambda,
+                     number *lambda) override;
+
+  bool
+  eval_f(index _n, const number *_x, bool _new_x, number &_f_value) override;
+
+  bool
+  eval_grad_f(index _n, const number *_x, bool _new_x,
+              number *_grad_f) override;
+
+  bool
+  eval_g(index _n, const number *_x, bool _new_x, index _m,
+         number *_g) override;
+
+  bool
+  eval_jac_g(index _n, const number *_x, bool _new_x, index _m,
+             index _number_elem_jac, index *_i_row, index *_j_col,
+             number *_jac_g) override;
+
+  bool
+  eval_h(index _n, const number *_x, bool _new_x, number _obj_factor, index _m,
+         const number *_lambda, bool _new_lambda, index _number_elem_hess,
+         index *_i_row, index *_j_col, number *_hess) override;
+
+  void
+  finalize_solution(Ipopt::SolverReturn _status, index _n, const number *_x,
+                    const number *_z_L, const number *_z_U, index _m,
+                    const number *_g, const number *_lambda, number _obj_value,
+                    const Ipopt::IpoptData *_ip_data,
+                    Ipopt::IpoptCalculatedQuantities *_ip_cq) override;
 };
-
-using namespace dpose_core;
-
-/// @brief returns all lethal cells within the _bounds
-/// @param _map the costmap to search
-/// @param _bounds the bounds of the search
-cell_vector
-lethal_cells_within(const costmap_2d::Costmap2D& _map,
-                    const rectangle<int>& _bounds);
-
-/**
- * @brief gradient decent optimizer for the pose_gradient.
- *
- * Will perform the gradient decent until a termination condition is met.
- * The decent ends
- * - if either the maximum iterations are reached,
- * - if the cost lies below the epsilon bound,
- * - if the derived position lies outside of the tolerance tol w.r.t _start.
- */
-struct gradient_decent {
-  /// @brief parameter for the optimization
-  struct parameter {
-    size_t iter = 10;      ///< maximal number of steps
-    double step_t = 1;     ///< maximal step size for translation (in cells)
-    double step_r = 0.1;   ///< maximal step size for rotation (in rads)
-    double epsilon = 0.1;  ///< cost-threshold for termination
-    tolerance tol;         ///< maximal distance from _start
-  };
-
-  gradient_decent() = default;
-  explicit gradient_decent(parameter&& _param) noexcept;
-
-  std::pair<float, Eigen::Vector3d>
-  solve(const pose_gradient& _pg, const pose_gradient::pose& _start,
-        const cell_vector& _cells) const;
-
-  inline const parameter&
-  get_param() const noexcept {
-    return param_;
-  }
-
-private:
-  parameter param_;  ///< parameterization for the optimization
-};
-
-}  // namespace internal
 
 /**
  * @brief Class implements a goal-tolerance-functionality for global-planners.
@@ -214,16 +132,15 @@ private:
  */
 struct DposeGoalTolerance : public gpp_interface::PrePlanningInterface {
   bool
-  preProcess(Pose& _start, Pose& _goal) override;
+  preProcess(Pose &_start, Pose &_goal) override;
 
   void
-  initialize(const std::string& _name, Map* _map) override;
+  initialize(const std::string &_name, Map *_map) override;
 
 private:
-  dpose_core::pose_gradient grad_;
-  internal::gradient_decent opt_;
-  double epsilon_ = 0;
-  Map* map_ = nullptr;
+  Ipopt::SmartPtr<Ipopt::TNLP> problem_;
+  Ipopt::SmartPtr<Ipopt::IpoptApplication> solver_;
+  Map *map_ = nullptr;
 };
 
 }  // namespace dpose_goal_tolerance

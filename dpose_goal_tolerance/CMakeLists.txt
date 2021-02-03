@@ -2,12 +2,19 @@ cmake_minimum_required(VERSION 3.6.0)
 project(dpose_goal_tolerance)
 
 set(CATKIN_PACKAGES dpose_core gpp_interface pluginlib xmlrpcpp)
+add_compile_definitions("HAVE_CSTDDEF")
 # add_compile_options(-Wpedantic -Wall -Wextra)
 
 # the clang-tidy checks are optional
 # set(CMAKE_CXX_CLANG_TIDY clang-tidy -checks=-*,clang-analyzer-cplusplus*,clang-diagnostic-*,clang-analyzer-*)
 
 find_package(catkin REQUIRED COMPONENTS ${CATKIN_PACKAGES})
+find_package(Eigen3 REQUIRED)
+find_package(PkgConfig REQUIRED)
+
+# find ipopt. this works if you install the library through apt via
+# sudo apt install coinor-libipopt-dev
+pkg_check_modules(Ipopt REQUIRED ipopt)
 
 catkin_package(
  INCLUDE_DIRS src
@@ -21,8 +28,14 @@ catkin_package(
 
 add_library(${PROJECT_NAME} src/dpose_goal_tolerance.cpp)
 target_include_directories(${PROJECT_NAME} PUBLIC src)
-target_include_directories(${PROJECT_NAME} PUBLIC SYSTEM ${catkin_INCLUDE_DIRS})
-target_link_libraries(${PROJECT_NAME} ${catkin_LIBRARIES})
+target_include_directories(${PROJECT_NAME} PUBLIC SYSTEM
+  ${EIGEN3_INCLUDE_DIRS}
+  ${catkin_INCLUDE_DIRS}
+  ${Ipopt_INCLUDE_DIRS})
+target_link_libraries(${PROJECT_NAME}
+  ${catkin_LIBRARIES}
+  ${Ipopt_LINK_LIBRARIES}
+  ${Ipopt_LDFLAGS})
 
 #############
 ## Install ##

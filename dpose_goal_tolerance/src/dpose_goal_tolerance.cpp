@@ -195,7 +195,7 @@ bool
 problem::eval_grad_f(index _n, const number *_x, bool _new_x, number *_grad_f) {
   if (_new_x)
     on_new_x(_n, _x);
-  _grad_f = J_.data();
+  std::copy_n(J_.data(), _n, _grad_f);
   return true;
 }
 

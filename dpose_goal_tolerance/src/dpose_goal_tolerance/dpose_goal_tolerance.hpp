@@ -39,6 +39,7 @@
 
 namespace dpose_goal_tolerance {
 
+/// f = min(cost(x, y, theta))
 /// g0: x^2 + y^2 < tol_lin^2
 /// g1: theta^2 < tol_rot^2
 struct problem : public Ipopt::TNLP {
@@ -52,9 +53,9 @@ private:
   using costmap = costmap_2d::Costmap2DROS;
 
   // input vars
-  number lin_tol_sq_ = 1;  ///< squared linear tolerance
-  number rot_tol_sq_ = 1;  ///< squared angular tolerance
-  pose pose_;              ///< initial pose
+  number lin_tol_sq_ = 1;  ///< squared linear tolerance in cells
+  number rot_tol_sq_ = 1;  ///< squared angular tolerance in rads
+  pose pose_;              ///< initial pose in cells
 
   // cache
   number cost_;                ///< cost of the current solution

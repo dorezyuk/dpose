@@ -52,9 +52,10 @@ lethal_cells_within(const costmap_2d::Costmap2D &_map,
                     const rectangle<int> &_bounds) {
   // enforce that bounds is within costmap
   rectangle<int> search_box = _bounds.array().max(0).matrix();
+  // todo check if size is zero to prevent underflow
   // clang-format off
-  search_box.row(0) = search_box.row(0).array().max(_map.getSizeInCellsX()).matrix();
-  search_box.row(1) = search_box.row(1).array().max(_map.getSizeInCellsY()).matrix();
+  search_box.row(0) = search_box.row(0).array().min(_map.getSizeInCellsX() - 1).matrix();
+  search_box.row(1) = search_box.row(1).array().min(_map.getSizeInCellsY() - 1).matrix();
   // clang-format on
 
   // first swipe to count the number of elements
@@ -108,11 +109,11 @@ problem::problem(costmap &_map, const pose_gradient::parameter &_param) :
 void
 problem::on_new_x(index _n, const number *_x) {
   // convert ipopt to eigen
-  const pose p(_x[0], _x[1], _x[2]);
+  const pose offset(_x[0], _x[1], _x[2]);
+  const pose p = offset + pose_;
 
   // query the data
   cost_ = pg_.get_cost(p, lethal_cells_.begin(), lethal_cells_.end(), &J_, &H_);
-
   // flip the signs
   J_ *= -1;
   H_ *= -1;
@@ -179,7 +180,7 @@ bool
 problem::get_starting_point(index _n, bool _init_x, number *_x, bool _init_z,
                             number *_z_L, number *_z_U, index _m,
                             bool _init_lambda, number *lambda) {
-  _x = pose_.data();
+  std::fill_n(_x, _n, 0);
   return true;
 }
 
@@ -204,7 +205,8 @@ problem::eval_g(index _n, const number *_x, bool _new_x, index _m, number *_g) {
   if (_new_x)
     on_new_x(_n, _x);
   // get the squared diff
-  const pose diff = pose_ - pose(_x[0], _x[1], _x[2]).array().pow(2).matrix();
+  const pose diff = pose(_x[0], _x[1], _x[2]).array().pow(2).matrix();
+  std::cout << "eval_g " << diff.transpose() << std::endl;
 
   // write into the output
   _g[0] = diff(0) + diff(1);
@@ -242,7 +244,7 @@ problem::eval_jac_g(index _n, const number *_x, bool _new_x, index _m,
     // 0: g0 / x = 2 * (x - x_init)
     // 1: g0 / y = 2 * (y - y_init)
     // 2: g1 / theta = 2 * (theta - theta_init)
-    const pose diff = (pose_ - pose(_x[0], _x[1], _x[2])) * 2;
+    const pose diff = pose(_x[0], _x[1], _x[2]) * 2;
     std::copy_n(diff.data(), _number_elem_jac, _jac_g);
   }
 
@@ -261,7 +263,7 @@ problem::eval_h(index _n, const number *_x, bool _new_x, number _obj_factor,
   index idx = 0;
   if (!_hess) {
     for (index row = 0; row != _n; ++row) {
-      for (index col = 0; col != row; ++col, ++idx) {
+      for (index col = 0; col <= row; ++col, ++idx) {
         _i_row[idx] = row;
         _j_col[idx] = col;
       }
@@ -300,7 +302,8 @@ problem::finalize_solution(Ipopt::SolverReturn _status, index _n,
                            const number *_lambda, number _obj_value,
                            const Ipopt::IpoptData *_ip_data,
                            Ipopt::IpoptCalculatedQuantities *_ip_cq) {
-  std::cout << "done with " << _obj_value << std::endl;
+  const pose p(_x[0], _x[1], _x[2]);
+  pose_ += p;
 }
 
 problem::pose
@@ -317,7 +320,26 @@ to_cell(const DposeGoalTolerance::Pose &_pose,
 
   // get yaw
   const auto yaw = tf2::getYaw(_pose.pose.orientation);
-  return problem::pose{x, y, yaw};
+  return problem::pose{static_cast<problem::number>(x),
+                       static_cast<problem::number>(y), yaw};
+}
+
+DposeGoalTolerance::Pose
+to_msg(const problem::pose &_pose, const DposeGoalTolerance::Map &_map) {
+  if ((_pose.segment(0, 2).array() < 0).any())
+    throw std::runtime_error("negative pose");
+
+  unsigned int x = std::round(_pose.x());
+  unsigned int y = std::round(_pose.y());
+
+  DposeGoalTolerance::Pose msg;
+
+  _map.getCostmap()->mapToWorld(x, y, msg.pose.position.x, msg.pose.position.y);
+  tf2::Quaternion q;
+  q.setRPY(0, 0, _pose.z());
+  msg.pose.orientation = tf2::toMsg(q);
+
+  return msg;
 }
 
 bool
@@ -344,6 +366,18 @@ DposeGoalTolerance::preProcess(Pose &_start, Pose &_goal) {
   our_problem->init(cell_pose, lin_tol_, rot_tol_);
 
   auto status = solver_->OptimizeTNLP(problem_);
+
+  try {
+    _goal.pose = to_msg(our_problem->get_pose(), *map_).pose;
+  }
+  catch (std::runtime_error &_ex) {
+    DP_WARN_LOG("cannot convert to message: " << _ex.what());
+    return false;
+  }
+
+  // publish the filtered pose
+  pose_pub_.publish(_goal);
+  return false;
 }
 
 using solver_ptr = Ipopt::SmartPtr<Ipopt::IpoptApplication>;
@@ -388,12 +422,13 @@ DposeGoalTolerance::initialize(const std::string &_name, Map *_map) {
   load_ipopt_cfg(solver_, nh, "tol", 5.);
   load_ipopt_cfg(solver_, nh, "mu_strategy", "adaptive");
   load_ipopt_cfg(solver_, nh, "output_file", "/tmp/ipopt.out");
-  load_ipopt_cfg(solver_, nh, "max_iter", 10);
-  load_ipopt_cfg(solver_, nh, "max_cpu_time", .2);
+  load_ipopt_cfg(solver_, nh, "max_iter", 20);
+  load_ipopt_cfg(solver_, nh, "max_cpu_time", .5);
 
   if (nh.param("hessian_approximation", false))
     solver_->Options()->SetStringValue("hessian_approximation",
                                        "limited-memory");
+  pose_pub_ = nh.advertise<Pose>("filtred", 1);
 }
 
 }  // namespace dpose_goal_tolerance

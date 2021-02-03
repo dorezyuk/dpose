@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.6.0)
 project(dpose_goal_tolerance)
 
-set(CATKIN_PACKAGES dpose_core gpp_interface pluginlib xmlrpcpp)
+set(CATKIN_PACKAGES dpose_core gpp_interface pluginlib tf2 tf2_geometry_msgs xmlrpcpp)
 add_compile_definitions("HAVE_CSTDDEF")
 # add_compile_options(-Wpedantic -Wall -Wextra)
 

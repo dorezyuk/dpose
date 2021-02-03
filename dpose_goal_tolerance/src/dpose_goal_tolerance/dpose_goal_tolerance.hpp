@@ -77,6 +77,11 @@ public:
   inline void
   init(const pose &_pose, number _lin_tol, number _rot_tol);
 
+  inline const pose &
+  get_pose() const noexcept {
+    return pose_;
+  }
+
   bool
   get_nlp_info(index &_n, index &_m, index &_nonzero_jac_g,
                index &_nonzero_h_lag, IndexStyleEnum &_index_style) override;
@@ -138,6 +143,7 @@ private:
   Ipopt::SmartPtr<Ipopt::TNLP> problem_;
   Ipopt::SmartPtr<Ipopt::IpoptApplication> solver_;
   Map *map_ = nullptr;
+  ros::Publisher pose_pub_;
 
   // parameters
   double rot_tol_ = 1;

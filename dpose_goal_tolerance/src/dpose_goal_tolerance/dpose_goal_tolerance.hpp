@@ -28,23 +28,19 @@
 #include <dpose_core/dpose_costmap.hpp>
 
 #include <gpp_interface/pre_planning_interface.hpp>
-// #include <angles/angles.h>
+#include <costmap_2d/costmap_2d_ros.h>
 
 #include <IpIpoptApplication.hpp>
 #include <IpTNLP.hpp>
 
 #include <Eigen/Dense>
 
-// #include <algorithm>
-// #include <cmath>
-// #include <memory>
-// #include <utility>
-// #include <vector>
+#include <string>
 
 namespace dpose_goal_tolerance {
 
-/// g0: x^2 + y^2 < rad
-/// g1
+/// g0: x^2 + y^2 < tol_lin^2
+/// g1: theta^2 < tol_rot^2
 struct problem : public Ipopt::TNLP {
   using index = Ipopt::Index;
   using number = Ipopt::Number;
@@ -78,7 +74,7 @@ public:
   problem(costmap &_map, const pose_gradient::parameter &_param);
 
   inline void
-  init(const pose &_pose, number _lin_tol, number _rot_tol) noexcept;
+  init(const pose &_pose, number _lin_tol, number _rot_tol);
 
   bool
   get_nlp_info(index &_n, index &_m, index &_nonzero_jac_g,
@@ -141,6 +137,10 @@ private:
   Ipopt::SmartPtr<Ipopt::TNLP> problem_;
   Ipopt::SmartPtr<Ipopt::IpoptApplication> solver_;
   Map *map_ = nullptr;
+
+  // parameters
+  double rot_tol_ = 1;
+  double lin_tol_ = 1;
 };
 
 }  // namespace dpose_goal_tolerance

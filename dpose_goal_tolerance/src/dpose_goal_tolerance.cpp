@@ -26,12 +26,11 @@
 #include <costmap_2d/cost_values.h>
 #include <pluginlib/class_list_macros.h>
 #include <ros/ros.h>
-#include <tf2/LinearMath/Quaternion.h>
 #include <tf2/utils.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
 
+#include <algorithm>
 #include <cmath>
-#include <memory>
 #include <string>
 #include <utility>
 
@@ -109,7 +108,7 @@ problem::problem(costmap &_map, const pose_gradient::parameter &_param) :
 void
 problem::on_new_x(index _n, const number *_x) {
   // convert ipopt to eigen
-  pose p(_x[0], _x[1], _x[2]);
+  const pose p(_x[0], _x[1], _x[2]);
 
   // query the data
   cost_ = pg_.get_cost(p, lethal_cells_.begin(), lethal_cells_.end(), &J_, &H_);
@@ -140,7 +139,11 @@ problem::init(const pose &_pose, number _lin_tol, number _rot_tol) {
   search_box << -h,  h, h, -h, -h,
                 -h, -h, h,  h, -h;
   // clang-format on
-  search_box = search_box.colwise() + pose_.segment(0, 2);
+  search_box = (search_box.cast<double>().colwise() + pose_.segment(0, 2))
+                   .array()
+                   .round()
+                   .matrix()
+                   .cast<int>();
 
   // now get the lethal cells
   // todo lock the map
@@ -300,6 +303,23 @@ problem::finalize_solution(Ipopt::SolverReturn _status, index _n,
   std::cout << "done with " << _obj_value << std::endl;
 }
 
+problem::pose
+to_cell(const DposeGoalTolerance::Pose &_pose,
+        const DposeGoalTolerance::Map &_map) {
+  // check if the _goal is in the same frame as the costmap.
+  if (_pose.header.frame_id != _map.getGlobalFrameID())
+    throw std::runtime_error("pose not in the global map frame");
+
+  const auto &p = _pose.pose.position;
+  unsigned int x, y;
+  if (!_map.getCostmap()->worldToMap(p.x, p.y, x, y))
+    throw std::runtime_error("pose outside of the map");
+
+  // get yaw
+  const auto yaw = tf2::getYaw(_pose.pose.orientation);
+  return problem::pose{x, y, yaw};
+}
+
 bool
 DposeGoalTolerance::preProcess(Pose &_start, Pose &_goal) {
   // we will only have a valid costmap ptr, if DposeGoalTolerance::initialize
@@ -309,19 +329,19 @@ DposeGoalTolerance::preProcess(Pose &_start, Pose &_goal) {
     return false;
   }
 
-  // check if the _goal is in the same frame as the costmap.
-  if (_goal.header.frame_id != map_->getGlobalFrameID()) {
-    DP_WARN_LOG("unknown frame_id: " << _goal.header.frame_id);
+  // convert the metric input to cells - that's what we need for the
+  // gradient_decent::solve call.
+  problem::pose cell_pose;
+  try {
+    cell_pose = to_cell(_goal, *map_);
+  }
+  catch (std::runtime_error &_ex) {
+    DP_WARN_LOG("cannot transform to cells: " << _ex.what());
     return false;
   }
 
-  // convert the metric input to cells - that's what we need for the
-  // gradient_decent::solve call.
-  const auto &map = *map_->getCostmap();
-  const problem::pose cell_se2 = to_cell(_goal, map);
-
-  auto our_problem = dynamic_cast<problem*>(problem_.operator->());
-  our_problem->init(cell_se2, 1, 1);
+  auto our_problem = dynamic_cast<problem *>(problem_.operator->());
+  our_problem->init(cell_pose, lin_tol_, rot_tol_);
 
   auto status = solver_->OptimizeTNLP(problem_);
 }
@@ -356,6 +376,12 @@ DposeGoalTolerance::initialize(const std::string &_name, Map *_map) {
 
   map_ = _map;
   ros::NodeHandle nh("~" + _name);
+
+  rot_tol_ = nh.param("rot_tolerance", rot_tol_);
+  lin_tol_ = nh.param("lin_tolerance", lin_tol_);
+  // convert it to cell-distance
+  lin_tol_ /= map_->getCostmap()->getResolution();
+
   problem_ = new problem(*map_, {2, true});
   solver_ = IpoptApplicationFactory();
 

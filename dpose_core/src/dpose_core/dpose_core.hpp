@@ -126,37 +126,14 @@ struct jacobian_data {
   /// @brief the data-structure for the user.
   using jacobian = Eigen::Vector3d;
 
-  /// @brief returns the jacobian for given x and y.
-  /// @param _x column of the pixel.
-  /// @param _y row 0f the pixel.
-  inline jacobian
-  at(int _y, int _x) const {
-    return {static_cast<double>(d_x.at<float>(_y, _x)),
-            static_cast<double>(d_y.at<float>(_y, _x)),
-            static_cast<double>(d_z.at<float>(_y, _x))};
-  }
-
-  /// @brief returns the jacobian at the given pixel.
-  /// @param _cell coordinate of the pixel.
-  inline jacobian
-  at(const cell& _cell) const {
-    return at(_cell.y(), _cell.x());
-  }
-
-  inline double
-  at(size_t _z, int _y, int _x) const {
-    switch (_z) {
-      case 0: return static_cast<double>(d_x.at<float>(_y, _x));
-      case 1: return static_cast<double>(d_y.at<float>(_y, _x));
-      case 2: return static_cast<double>(d_z.at<float>(_y, _x));
-      default: throw std::out_of_range("invalid z index");
-    }
+  inline const cv::Mat&
+  at(size_t _z) const {
+    return d_array.at(_z);
   }
 
 private:
-  cv::Mat d_x;  ///< derivative of the cost in x
-  cv::Mat d_y;  ///< derivative of the cost in y
-  cv::Mat d_z;  ///< derivative of the cost in z (theta)
+  // the buffer hold the derivatives of cost with respect to x, y and theta
+  std::array<cv::Mat, 3> d_array;
 };
 
 /**
@@ -182,48 +159,15 @@ struct hessian_data {
   /// @brief the data-structure for the user.
   using hessian = Eigen::Matrix3d;
 
-  /// @brief returns the hessian for given x and y.
-  /// @param _x column of the pixel.
-  /// @param _y row 0f the pixel.
-  inline hessian
-  at(int _y, int _x) const {
-    // todo check if this allocation hurts us...
-    hessian H;
-    // clang-format off
-    H << d_x_x.at<float>(_y, _x), d_y_x.at<float>(_y, _x), d_z_x.at<float>(_y, _x),
-         d_y_x.at<float>(_y, _x), d_y_y.at<float>(_y, _x), d_y_z.at<float>(_y, _x),
-         d_z_x.at<float>(_y, _x), d_y_z.at<float>(_y, _x), d_z_z.at<float>(_y, _x);
-    // clang-format on
-    return H;
-  }
-
-  /// @brief returns the hessian at the given pixel.
-  /// @param _cell coordinate of the pixel.
-  inline hessian
-  at(const cell& _cell) const {
-    return at(_cell.y(), _cell.x());
-  }
-
-  double
-  at(size_t _z, int _y, int _x) const {
-    switch (_z) {
-      case 0: return d_x_x.at<float>(_y, _x);
-      case 1: return d_y_x.at<float>(_y, _x);
-      case 2: return d_z_x.at<float>(_y, _x);
-      case 3: return d_y_y.at<float>(_y, _x);
-      case 4: return d_y_z.at<float>(_y, _x);
-      case 5: return d_z_z.at<float>(_y, _x);
-      default: throw std::out_of_range("invalid z index");
-    }
+  inline const cv::Mat&
+  at(size_t _z) const {
+    return d_array.at(_z);
   }
 
 private:
-  cv::Mat d_x_x;  ///< derivative of the cost in x,x
-  cv::Mat d_y_x;  ///< derivative of the cost in y,x
-  cv::Mat d_z_x;  ///< derivative of the cost in theta,x
-  cv::Mat d_y_y;  ///< derivative of the cost in y,y
-  cv::Mat d_y_z;  ///< derivative of the cost in y,theta
-  cv::Mat d_z_z;  ///< derivative of the cost in theta,theta
+  // the buffer holds the parital derivatives of cost with respect to (x, x),
+  // (y, x), (theta, x), (y, y), (y, theta) and (theta theta).
+  std::array<cv::Mat, 6> d_array;
 };
 
 /// @brief POD holding all the data required for optimization

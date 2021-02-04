@@ -63,3 +63,18 @@ if(CATKIN_ENABLE_TESTING)
     target_link_libraries(${PROJECT_NAME}_test ${PROJECT_NAME} gtest_main)
   endif()
 endif()
+
+###############
+## Benchmark ##
+###############
+
+set(${PROJECT_NAME}_BENCHMARK "Enable benchmarking" ON)
+if(${PROJECT_NAME}_BENCHMARK)
+  find_package(benchmark)
+  if(benchmark_FOUND)
+    add_executable(${PROJECT_NAME}_perf perf/dpose_core.cpp)
+    target_link_libraries(${PROJECT_NAME}_perf benchmark::benchmark ${PROJECT_NAME})
+  else()
+    message("benchmark library not found")
+  endif()
+endif()

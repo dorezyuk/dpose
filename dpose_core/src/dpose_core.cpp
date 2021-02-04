@@ -291,38 +291,40 @@ cost_data::cost_data(const polygon& _footprint, size_t _padding) {
   box = _to_rectangle(cost).colwise() - center;
 }
 
-jacobian_data::jacobian_data(const cost_data& _data) {
-  cv::Sobel(_data.cost, d_x, cv::DataType<float>::type, 1, 0, 5, 1. / 128.);
-  cv::Sobel(_data.cost, d_y, cv::DataType<float>::type, 0, 1, 5, 1. / 128.);
-  d_z = _angular_derivative(_data.cost, _data.center);
+jacobian_data::jacobian_data(const cost_data& _d) {
+  const auto scale = 1. / 128.;
+  cv::Sobel(_d.cost, d_array.at(0), cv::DataType<float>::type, 1, 0, 5, scale);
+  cv::Sobel(_d.cost, d_array.at(1), cv::DataType<float>::type, 0, 1, 5, scale);
+  d_array.at(2) = _angular_derivative(_d.cost, _d.center);
 
   // safe the jacobians if compiled in debug mode
-  assert(cv::imwrite("/tmp/d_x.jpg", d_x * 10 + 100));
-  assert(cv::imwrite("/tmp/d_y.jpg", d_y * 10 + 100));
-  assert(cv::imwrite("/tmp/d_theta.jpg", d_z * 10 + 100));
+  assert(cv::imwrite("/tmp/d_x.jpg", d_array.at(0) * 10 + 100));
+  assert(cv::imwrite("/tmp/d_y.jpg", d_array.at(1) * 10 + 100));
+  assert(cv::imwrite("/tmp/d_theta.jpg", d_array.at(2) * 10 + 100));
 }
 
 hessian_data::hessian_data(const cost_data& _cost, const jacobian_data& _J) {
+  const auto scale = 1. / 256.;
   // second derivative to x
-  cv::Sobel(_J.d_x, d_x_x, cv::DataType<float>::type, 1, 0, 5, 1. / 256.);
-  cv::Sobel(_J.d_y, d_y_x, cv::DataType<float>::type, 1, 0, 5, 1. / 256.);
-  cv::Sobel(_J.d_z, d_z_x, cv::DataType<float>::type, 1, 0, 5, 1. / 256.);
+  cv::Sobel(_J.at(0), d_array.at(0), cv::DataType<float>::type, 1, 0, 5, scale);
+  cv::Sobel(_J.at(1), d_array.at(1), cv::DataType<float>::type, 1, 0, 5, scale);
+  cv::Sobel(_J.at(2), d_array.at(2), cv::DataType<float>::type, 1, 0, 5, scale);
 
   // safe the hessians if compiled in debug mode
-  assert(cv::imwrite("/tmp/d_x_x.jpg", d_x_x * 10 + 100));
-  assert(cv::imwrite("/tmp/d_y_x.jpg", d_y_x * 10 + 100));
-  assert(cv::imwrite("/tmp/d_theta_x.jpg", d_z_x * 10 + 100));
+  assert(cv::imwrite("/tmp/d_x_x.jpg", d_array.at(0) * 10 + 100));
+  assert(cv::imwrite("/tmp/d_y_x.jpg", d_array.at(1) * 10 + 100));
+  assert(cv::imwrite("/tmp/d_theta_x.jpg", d_array.at(2) * 10 + 100));
 
   // second derivative to y
-  cv::Sobel(_J.d_y, d_y_y, cv::DataType<float>::type, 0, 1, 5, 1. / 256.);
-  cv::Sobel(_J.d_z, d_y_z, cv::DataType<float>::type, 0, 1, 5, 1. / 256.);
+  cv::Sobel(_J.at(1), d_array.at(3), cv::DataType<float>::type, 0, 1, 5, scale);
+  cv::Sobel(_J.at(2), d_array.at(4), cv::DataType<float>::type, 0, 1, 5, scale);
 
   // safe the hessians if compiled in debug mode
-  assert(cv::imwrite("/tmp/d_y_y.jpg", d_y_y * 10 + 100));
-  assert(cv::imwrite("/tmp/d_theta_y.jpg", d_y_z * 10 + 100));
+  assert(cv::imwrite("/tmp/d_y_y.jpg", d_array.at(3) * 10 + 100));
+  assert(cv::imwrite("/tmp/d_theta_y.jpg", d_array.at(4) * 10 + 100));
 
   // second derivative to theta
-  d_z_z = _angular_derivative(_J.d_z, _cost.center) * 1. / 64.;
+  d_array.at(5) = _angular_derivative(_J.at(2), _cost.center) * 1. / 64.;
 
   // safe the hessians if compiled in debug mode
   assert(cv::imwrite("/tmp/d_theta_theta.jpg", d_z_z * 10 + 100));
@@ -346,6 +348,16 @@ pose_gradient::pose_gradient(const polygon& _footprint,
   data_.J = jacobian_data(data_.core);
   if (_param.generate_hessian)
     data_.H = hessian_data(data_.core, data_.J);
+}
+
+inline void
+_interpolate(const cv::Mat& _image, const Eigen::Array2i& _lower,
+             const Eigen::Array2i _upper, Eigen::Matrix2d& _m) {
+  // m is [[f_00, f_01], [f_10, f_11]]
+  _m << _image.at<float>(_lower(1), _lower(0)),
+      _image.at<float>(_upper(1), _lower(0)),
+      _image.at<float>(_lower(1), _upper(0)),
+      _image.at<float>(_upper(1), _upper(0));
 }
 
 float
@@ -397,31 +409,21 @@ pose_gradient::get_cost(const pose& _se2, cell_vector::const_iterator _begin,
     c_rel_x << 1 - c_rel(0), c_rel(0);
     c_rel_y << 1 - c_rel(1), c_rel(1);
 
-    // m is [[f_00, f_01], [f_10, f_11]]
-    m << data_.core.at(k_lower(1), k_lower(0)),
-        data_.core.at(k_upper(1), k_lower(0)),
-        data_.core.at(k_lower(1), k_upper(0)),
-        data_.core.at(k_upper(1), k_upper(0));
     // update the cost
+    _interpolate(data_.core.get_data(), k_lower, k_upper, m);
     sum += c_rel_x.transpose() * m * c_rel_y;
 
     // J and H are optional
     if (_J) {
       for (size_t ii = 0; ii != 3; ++ii) {
-        m << data_.J.at(ii, k_lower(1), k_lower(0)),
-            data_.J.at(ii, k_upper(1), k_lower(0)),
-            data_.J.at(ii, k_lower(1), k_upper(0)),
-            data_.J.at(ii, k_upper(1), k_upper(0));
+        _interpolate(data_.J.at(ii), k_lower, k_upper, m);
         (*_J)(ii) += c_rel_x.transpose() * m * c_rel_y;
       }
     }
 
     if (_H) {
       for (size_t ii = 0; ii != 6; ++ii) {
-        m << data_.H.at(ii, k_lower(1), k_lower(0)),
-            data_.H.at(ii, k_upper(1), k_lower(0)),
-            data_.H.at(ii, k_lower(1), k_upper(0)),
-            data_.H.at(ii, k_upper(1), k_upper(0));
+        _interpolate(data_.H.at(ii), k_lower, k_upper, m);
         // note: we write out of order and fix this below
         // eigen defaults to col-major ordering
         (*_H)(ii) += c_rel_x.transpose() * m * c_rel_y;

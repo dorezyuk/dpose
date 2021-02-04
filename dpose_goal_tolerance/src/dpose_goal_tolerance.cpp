@@ -29,6 +29,8 @@
 #include <tf2/utils.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
 
+#include <boost/thread/lock_types.hpp>
+
 #include <algorithm>
 #include <cmath>
 #include <string>
@@ -48,11 +50,15 @@ namespace dpose_goal_tolerance {
 using namespace dpose_core;
 
 cell_vector
-lethal_cells_within(const costmap_2d::Costmap2D &_map,
+lethal_cells_within(costmap_2d::Costmap2D &_map,
                     const rectangle<int> &_bounds) {
   // enforce that bounds is within costmap
   rectangle<int> search_box = _bounds.array().max(0).matrix();
-  // todo check if size is zero to prevent underflow
+
+  // check if size is zero to prevent underflow
+  if (_map.getSizeInCellsX() == 0 || _map.getSizeInCellsY() == 0)
+    return {};
+
   // clang-format off
   search_box.row(0) = search_box.row(0).array().min(_map.getSizeInCellsX() - 1).matrix();
   search_box.row(1) = search_box.row(1).array().min(_map.getSizeInCellsY() - 1).matrix();
@@ -62,6 +68,9 @@ lethal_cells_within(const costmap_2d::Costmap2D &_map,
   const auto rays = to_rays(search_box);
 
   size_t count = 0;
+
+  // lock the costmap
+  boost::unique_lock<boost::recursive_mutex> lock(*_map.getMutex());
   const auto char_map = _map.getCharMap();
   for (const auto &ray : rays) {
     const auto &y = ray.first;
@@ -147,7 +156,6 @@ problem::init(const pose &_pose, number _lin_tol, number _rot_tol) {
                    .cast<int>();
 
   // now get the lethal cells
-  // todo lock the map
   lethal_cells_ = lethal_cells_within(*costmap_->getCostmap(), search_box);
 }
 
@@ -206,7 +214,6 @@ problem::eval_g(index _n, const number *_x, bool _new_x, index _m, number *_g) {
     on_new_x(_n, _x);
   // get the squared diff
   const pose diff = pose(_x[0], _x[1], _x[2]).array().pow(2).matrix();
-  std::cout << "eval_g " << diff.transpose() << std::endl;
 
   // write into the output
   _g[0] = diff(0) + diff(1);
@@ -223,8 +230,7 @@ problem::eval_jac_g(index _n, const number *_x, bool _new_x, index _m,
 
   if (!_jac_g) {
     index ii = 0;
-    // the jacobian looks like
-    /*
+    /* the jacobian looks like
      * [[g0 / dx, g0 / dy, 0],
      *  [0,     , 0,     , g1 / dtheta]]
      */
@@ -239,11 +245,14 @@ problem::eval_jac_g(index _n, const number *_x, bool _new_x, index _m,
     assert(++ii == _number_elem_jac);
   }
   else {
-    // g0 = (x - x_init)^2 + (y - y_init)^2
-    // g1 = (theta - theta_init)^2
-    // 0: g0 / x = 2 * (x - x_init)
-    // 1: g0 / y = 2 * (y - y_init)
-    // 2: g1 / theta = 2 * (theta - theta_init)
+    // recap: our constraints are defined as
+    // g0 = x^2 + y^2
+    // g1 = theta^2
+    //
+    // the derivatives are then
+    // 0: g0 / dx = 2 * x
+    // 1: g0 / dy = 2 * y
+    // 2: g1 / dtheta = 2 * theta
     const pose diff = pose(_x[0], _x[1], _x[2]) * 2;
     std::copy_n(diff.data(), _number_elem_jac, _jac_g);
   }
@@ -259,9 +268,12 @@ problem::eval_h(index _n, const number *_x, bool _new_x, number _obj_factor,
   if (_new_x)
     on_new_x(_n, _x);
 
-  // the hessian for this problem is actually dense
   index idx = 0;
   if (!_hess) {
+    // define the ordering for the dense hessian. the order goes like
+    // 0
+    // 1 2
+    // 3 4 5
     for (index row = 0; row != _n; ++row) {
       for (index col = 0; col <= row; ++col, ++idx) {
         _i_row[idx] = row;
@@ -274,22 +286,17 @@ problem::eval_h(index _n, const number *_x, bool _new_x, number _obj_factor,
     // g0 / (dy dy) = 2
     // g1 / (dtheta dtheta) = 2
     // all other elements are zero
-    pose diag(_lambda[0], _lambda[0], _lambda[1]);
-    pose_gradient::hessian H_g = 2 * diag.asDiagonal();
-
-    pose_gradient::hessian H_sum = _obj_factor * H_ + H_g;
+    const pose diag(_lambda[0], _lambda[0], _lambda[1]);
+    const pose_gradient::hessian H_g = 2 * diag.asDiagonal();
+    const pose_gradient::hessian H_lag = _obj_factor * H_ + H_g;
 
     // write the hessian into the output buffer
-    // the order goes like
-    // 0
-    // 1 2
-    // 3 4 5
-    _hess[idx++] = H_sum(0, 0);  // lag / (dx dx)
-    _hess[idx++] = H_sum(1, 0);  // lag / (dy dx)
-    _hess[idx++] = H_sum(1, 1);  // lag / (dy dy)
-    _hess[idx++] = H_sum(2, 0);  // lag / (dtheta dx)
-    _hess[idx++] = H_sum(2, 1);  // lag / (dtheta dy)
-    _hess[idx++] = H_sum(2, 2);  // lag / (dtheta dtheta)
+    _hess[idx++] = H_lag(0, 0);  // lag / (dx dx)
+    _hess[idx++] = H_lag(1, 0);  // lag / (dy dx)
+    _hess[idx++] = H_lag(1, 1);  // lag / (dy dy)
+    _hess[idx++] = H_lag(2, 0);  // lag / (dtheta dx)
+    _hess[idx++] = H_lag(2, 1);  // lag / (dtheta dy)
+    _hess[idx++] = H_lag(2, 2);  // lag / (dtheta dtheta)
   }
   assert(idx == _number_elem_hess);
   return true;
@@ -326,14 +333,17 @@ to_cell(const DposeGoalTolerance::Pose &_pose,
 
 DposeGoalTolerance::Pose
 to_msg(const problem::pose &_pose, const DposeGoalTolerance::Map &_map) {
+  // check to prevent underflow
   if ((_pose.segment(0, 2).array() < 0).any())
     throw std::runtime_error("negative pose");
 
+  // convert to unsigned int
   unsigned int x = std::round(_pose.x());
   unsigned int y = std::round(_pose.y());
 
   DposeGoalTolerance::Pose msg;
 
+  // get the metric data
   _map.getCostmap()->mapToWorld(x, y, msg.pose.position.x, msg.pose.position.y);
   tf2::Quaternion q;
   q.setRPY(0, 0, _pose.z());

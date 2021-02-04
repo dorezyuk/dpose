@@ -74,7 +74,7 @@ public:
   problem() = default;
   problem(costmap &_map, const pose_gradient::parameter &_param);
 
-  inline void
+  void
   init(const pose &_pose, number _lin_tol, number _rot_tol);
 
   inline const pose &

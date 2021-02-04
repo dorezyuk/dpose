@@ -28,6 +28,7 @@
 
 #include <Eigen/Dense>
 
+#include <array>
 #include <stdexcept>
 #include <vector>
 
@@ -72,21 +73,6 @@ struct cost_data {
   cost_data() = default;
   cost_data(const polygon& _footprint, size_t _padding);
 
-  /// @brief returns the cost at the given x and y.
-  /// @param _x column of the pixel.
-  /// @param _y row 0f the pixel.
-  inline double
-  at(int _y, int _x) const {
-    return static_cast<double>(cost.at<float>(_y, _x));
-  }
-
-  /// @brief returns the cost at the given pixel.
-  /// @param _cell coordinate of the pixel.
-  inline double
-  at(const cell& _cell) const {
-    return at(_cell.y(), _cell.x());
-  }
-
   inline const cv::Mat&
   get_data() const noexcept {
     return cost;
@@ -126,6 +112,8 @@ struct jacobian_data {
   /// @brief the data-structure for the user.
   using jacobian = Eigen::Vector3d;
 
+  /// @brief returns the matrix at the given index.
+  /// @throw std::out_of_range if _z is bigger than 5.
   inline const cv::Mat&
   at(size_t _z) const {
     return d_array.at(_z);
@@ -159,6 +147,8 @@ struct hessian_data {
   /// @brief the data-structure for the user.
   using hessian = Eigen::Matrix3d;
 
+  /// @brief returns the matrix at the given index.
+  /// @throw std::out_of_range if _z is bigger than 5.
   inline const cv::Mat&
   at(size_t _z) const {
     return d_array.at(_z);

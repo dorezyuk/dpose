@@ -42,9 +42,19 @@
 
 namespace dpose_goal_tolerance {
 
-/// f = min(cost(x, y, theta))
-/// g0: x^2 + y^2 < tol_lin^2
-/// g1: theta^2 < tol_rot^2
+/**
+ * @brief Problem definition for pose cost optimization under constraints.
+ *
+ * The class defined the following ipopt-problem:
+ * f = min(cost(x, y, theta))
+ * g0: x^2 + y^2 < tol_lin^2
+ * g1: theta^2 < tol_rot^2
+ *
+ * It searches for the displacements x to given initial pose p, such that the
+ * cost of the displaced pose (p + x) is minimized. The displacement x is
+ * constrained translationally (g0) and rotationally (g1).
+ *
+ */
 struct problem : public Ipopt::TNLP {
   using index = Ipopt::Index;
   using number = Ipopt::Number;

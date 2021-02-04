@@ -40,6 +40,7 @@
 constexpr char _name[] = "[dpose_goal_tolerance]: ";
 
 // custom prints
+#define DP_DEBUG(args) ROS_DEBUG_STREAM(_name << args)
 #define DP_INFO_LOG(args) ROS_INFO_STREAM(_name << args)
 #define DP_WARN_LOG(args) ROS_WARN_STREAM(_name << args)
 #define DP_ERROR_LOG(args) ROS_ERROR_STREAM(_name << args)
@@ -354,6 +355,12 @@ to_msg(const problem::pose &_pose, const DposeGoalTolerance::Map &_map) {
 
 bool
 DposeGoalTolerance::preProcess(Pose &_start, Pose &_goal) {
+  // this class is a noop if both tolerances are zero
+  if(lin_tol_ <= 0 && rot_tol_ <= 0){
+    DP_DEBUG("class disabled: " << lin_tol_ << ", " << rot_tol_);
+    return true;
+  }
+
   // we will only have a valid costmap ptr, if DposeGoalTolerance::initialize
   // was called successfully.
   if (!map_) {
@@ -420,14 +427,15 @@ DposeGoalTolerance::initialize(const std::string &_name, Map *_map) {
   map_ = _map;
   ros::NodeHandle nh("~" + _name);
 
-  rot_tol_ = nh.param("rot_tolerance", rot_tol_);
   lin_tol_ = nh.param("lin_tolerance", lin_tol_);
+  rot_tol_ = nh.param("rot_tolerance", rot_tol_);
   // convert it to cell-distance
   lin_tol_ /= map_->getCostmap()->getResolution();
 
   problem_ = new problem(*map_, {2, true});
   solver_ = IpoptApplicationFactory();
 
+  // configure the solver
   load_ipopt_cfg(solver_, nh, "tol", 5.);
   load_ipopt_cfg(solver_, nh, "mu_strategy", "adaptive");
   load_ipopt_cfg(solver_, nh, "output_file", "/tmp/ipopt.out");
@@ -438,6 +446,15 @@ DposeGoalTolerance::initialize(const std::string &_name, Map *_map) {
     solver_->Options()->SetStringValue("hessian_approximation",
                                        "limited-memory");
   pose_pub_ = nh.advertise<Pose>("filtred", 1);
+
+  // setup the cfg-server
+  cfg_server_.reset(new cfg_server(nh));
+  cfg_server_->setCallback(
+      [&](DposeGoalToleranceConfig &_cfg, uint32_t _level) {
+        // lin is in cells
+        lin_tol_ = _cfg.lin_tolerance / map_->getCostmap()->getResolution();
+        rot_tol_ = _cfg.rot_tolerance;
+      });
 }
 
 }  // namespace dpose_goal_tolerance

@@ -1,7 +1,14 @@
 cmake_minimum_required(VERSION 3.6.0)
 project(dpose_goal_tolerance)
 
-set(CATKIN_PACKAGES dpose_core gpp_interface pluginlib tf2 tf2_geometry_msgs xmlrpcpp)
+set(CATKIN_PACKAGES
+  dpose_core
+  dynamic_reconfigure
+  gpp_interface
+  pluginlib
+  tf2
+  tf2_geometry_msgs
+  xmlrpcpp)
 add_compile_definitions("HAVE_CSTDDEF")
 # add_compile_options(-Wpedantic -Wall -Wextra)
 
@@ -15,6 +22,10 @@ find_package(PkgConfig REQUIRED)
 # find ipopt. this works if you install the library through apt via
 # sudo apt install coinor-libipopt-dev
 pkg_check_modules(Ipopt REQUIRED ipopt)
+
+generate_dynamic_reconfigure_options(
+  cfg/DposeGoalTolerance.cfg
+)
 
 catkin_package(
  INCLUDE_DIRS src
@@ -36,6 +47,7 @@ target_link_libraries(${PROJECT_NAME}
   ${catkin_LIBRARIES}
   ${Ipopt_LINK_LIBRARIES}
   ${Ipopt_LDFLAGS})
+add_dependencies(${PROJECT_NAME} ${PROJECT_NAME}_gencfg)
 
 #############
 ## Install ##
@@ -48,6 +60,7 @@ install(TARGETS ${PROJECT_NAME}
 )
 
 install(DIRECTORY src/${PROJECT_NAME}/
+                  # include/${PROJECT_NAME}
   DESTINATION ${CATKIN_PACKAGE_INCLUDE_DESTINATION}
 )
 

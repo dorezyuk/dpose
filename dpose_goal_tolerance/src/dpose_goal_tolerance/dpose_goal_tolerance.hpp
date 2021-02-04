@@ -26,15 +26,18 @@
 
 #include <dpose_core/dpose_core.hpp>
 #include <dpose_core/dpose_costmap.hpp>
+#include <dpose_goal_tolerance/DposeGoalToleranceConfig.h>
 
 #include <gpp_interface/pre_planning_interface.hpp>
 #include <costmap_2d/costmap_2d_ros.h>
+#include <dynamic_reconfigure/server.h>
 
 #include <IpIpoptApplication.hpp>
 #include <IpTNLP.hpp>
 
 #include <Eigen/Dense>
 
+#include <memory>
 #include <string>
 
 namespace dpose_goal_tolerance {
@@ -140,14 +143,24 @@ struct DposeGoalTolerance : public gpp_interface::PrePlanningInterface {
   initialize(const std::string &_name, Map *_map) override;
 
 private:
+  // ipopt
   Ipopt::SmartPtr<Ipopt::TNLP> problem_;
   Ipopt::SmartPtr<Ipopt::IpoptApplication> solver_;
+
+  // ros-comm
   Map *map_ = nullptr;
   ros::Publisher pose_pub_;
 
   // parameters
   double rot_tol_ = 1;
   double lin_tol_ = 1;
+
+  // dynamic reconfigure
+  using cfg_server = dynamic_reconfigure::Server<DposeGoalToleranceConfig>;
+  using cfg_server_ptr = std::unique_ptr<cfg_server>;
+
+  // shutdown the server first
+  cfg_server_ptr cfg_server_;
 };
 
 }  // namespace dpose_goal_tolerance

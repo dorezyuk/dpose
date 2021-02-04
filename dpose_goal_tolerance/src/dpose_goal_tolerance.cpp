@@ -361,8 +361,7 @@ DposeGoalTolerance::preProcess(Pose &_start, Pose &_goal) {
     return false;
   }
 
-  // convert the metric input to cells - that's what we need for the
-  // gradient_decent::solve call.
+  // convert the metric input to cells - that's what we need for the solver
   problem::pose cell_pose;
   try {
     cell_pose = to_cell(_goal, *map_);
@@ -372,7 +371,7 @@ DposeGoalTolerance::preProcess(Pose &_start, Pose &_goal) {
     return false;
   }
 
-  auto our_problem = dynamic_cast<problem *>(problem_.operator->());
+  auto our_problem = dynamic_cast<problem *>(Ipopt::GetRawPtr(problem_));
   our_problem->init(cell_pose, lin_tol_, rot_tol_);
 
   auto status = solver_->OptimizeTNLP(problem_);

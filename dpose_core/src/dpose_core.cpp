@@ -327,7 +327,7 @@ hessian_data::hessian_data(const cost_data& _cost, const jacobian_data& _J) {
   d_array.at(5) = _angular_derivative(_J.at(2), _cost.center) * 1. / 64.;
 
   // safe the hessians if compiled in debug mode
-  assert(cv::imwrite("/tmp/d_theta_theta.jpg", d_z_z * 10 + 100));
+  assert(cv::imwrite("/tmp/d_theta_theta.jpg", d_array.at(5) * 10 + 100));
 }
 
 using transform_type = Eigen::Isometry2d;

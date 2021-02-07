@@ -432,7 +432,8 @@ DposeGoalTolerance::initialize(const std::string &_name, Map *_map) {
   // convert it to cell-distance
   lin_tol_ /= map_->getCostmap()->getResolution();
 
-  problem_ = new problem(*map_, {2, true});
+  const int padding = nh.param("padding", 2);
+  problem_ = new problem(*map_, {padding, true});
   solver_ = IpoptApplicationFactory();
 
   // configure the solver
@@ -445,7 +446,7 @@ DposeGoalTolerance::initialize(const std::string &_name, Map *_map) {
   if (nh.param("hessian_approximation", false))
     solver_->Options()->SetStringValue("hessian_approximation",
                                        "limited-memory");
-  pose_pub_ = nh.advertise<Pose>("filtred", 1);
+  pose_pub_ = nh.advertise<Pose>("filtered", 1);
 
   // setup the cfg-server
   cfg_server_.reset(new cfg_server(nh));

@@ -61,6 +61,7 @@ using cell = Eigen::Vector2i;
 using cell_vector = std::vector<cell>;
 
 // forward-decleration so we can befriend these structures together.
+// todo remove this
 struct jacobian_data;
 struct hessian_data;
 
@@ -97,20 +98,13 @@ private:
 /**
  * @brief struct holding the data required for the jacobians.
  *
- * Use jacobian_data::at to get the jacobian for a pixel.
  * The Jacobian has the form \f$ [f_x, f_y, f_{\theta}]^T \f$, where the
  * \f$ f_x \f$ represents the partial derivative of the cost f with respect to
  * x.
  */
 struct jacobian_data {
-  // the Hessian is build on top of the Jacobian
-  friend hessian_data;
-
   jacobian_data() = default;
   explicit jacobian_data(const cost_data& _cost);
-
-  /// @brief the data-structure for the user.
-  using jacobian = Eigen::Vector3d;
 
   /// @brief returns the matrix at the given index.
   /// @throw std::out_of_range if _z is bigger than 5.
@@ -127,7 +121,6 @@ private:
 /**
  * @brief struct holding the data required for the hessians.
  *
- * Use hessian_data::get to get the hessian for a pixel.
  * The Hessian has the form
  * \f[
  * \begin{bmatrix}
@@ -143,9 +136,6 @@ private:
 struct hessian_data {
   hessian_data() = default;
   hessian_data(const cost_data& _cost, const jacobian_data& _jacobian);
-
-  /// @brief the data-structure for the user.
-  using hessian = Eigen::Matrix3d;
 
   /// @brief returns the matrix at the given index.
   /// @throw std::out_of_range if _z is bigger than 5.
@@ -181,8 +171,8 @@ struct pose_gradient {
   };
 
   // the three arguments for get_pose
-  using jacobian = jacobian_data::jacobian;
-  using hessian = hessian_data::hessian;
+  using jacobian = Eigen::Vector3d;
+  using hessian = Eigen::Matrix3d;
   using pose = Eigen::Vector3d;
 
   /// @brief sets up internal data based on _footprint and _param.

@@ -443,7 +443,6 @@ pose_gradient::get_cost(const pose& _se2, cell_vector::const_iterator _begin,
   if (_H) {
     // fix the lazy ordering from above
     hessian H = *_H;
-    // std::cout << "original\n" << *_H << std::endl;
     H(2, 2) = H(5);            // theta theta
     H(1, 2) = H(2, 1) = H(4);  // y theta
     H(1, 1) = H(3);            // y y

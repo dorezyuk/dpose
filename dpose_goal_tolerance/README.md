@@ -4,6 +4,16 @@ The library allows you to extend your nav_core::GlobalPlanner with a goal tolera
 It implements the gpp_interface::PrePlanningInterface.
 In order to use it, you will need the gpp_plugin::GppPlugin.
 
+<img src="doc/pill.gif" alt="pill" style="height: 400px;"/>
+<img src="doc/banana.gif" alt="banana" style="height: 400px;"/>
+
+The library works with arbitrary footprints as showcased above.
+The gifs show the original global pose as red arrows.
+The displaced pose is shown as a green arrow.
+The underlying displaced footprint is depicted as a green polygon.
+The left gif show-cases the pose-displacement for a pill-shaped robot.
+The right gif shows the functionality for a banana-shaped robot.
+
 ## Build and Install
 
 If you want to install this package from sources clone this repository into your workspace and build its

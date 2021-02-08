@@ -3,7 +3,7 @@
 The library allows you to extend your nav_core::GlobalPlanner with a goal tolerance feature.
 It implements the gpp_interface::PrePlanningInterface.
 In order to use it, you will need the gpp_plugin::GppPlugin.
-<p float="left">
+<p float="left" align="center">
     <img src="doc/pill.gif" alt="pill" style="height: 400px;"/>
     <img src="doc/banana.gif" alt="banana" style="height: 400px;"/>
 </p>

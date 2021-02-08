@@ -2,7 +2,7 @@
 <package format="2">
   <name>dpose_goal_tolerance</name>
   <version>0.0.0</version>
-  <description>The package offers goal-tolerances for global-planners as a gpp-pre-planning plugin </description>
+  <description>Goal-tolerancies for global-planners</description>
 
   <maintainer email="dmitrij.dorezyuk@hotmail.de">Dima Dorezyuk</maintainer>
 

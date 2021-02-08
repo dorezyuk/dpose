@@ -533,10 +533,6 @@ DposeGoalTolerance::initialize(const std::string &_name, Map *_map) {
   load_ipopt_cfg(solver_, nh, "max_iter", 20);
   load_ipopt_cfg(solver_, nh, "max_cpu_time", .5);
 
-  // todo drop the hessian here
-  if (nh.param("hessian_approximation", false))
-    solver_->Options()->SetStringValue("hessian_approximation",
-                                       "limited-memory");
   pose_pub_ = nh.advertise<Pose>("filtered", 1);
 
   // setup the cfg-server

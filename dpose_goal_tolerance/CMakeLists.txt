@@ -2,13 +2,13 @@ cmake_minimum_required(VERSION 3.6.0)
 project(dpose_goal_tolerance)
 
 set(CATKIN_PACKAGES
+  angles
   dpose_core
   dynamic_reconfigure
   gpp_interface
   pluginlib
   tf2
-  tf2_geometry_msgs
-  xmlrpcpp)
+  tf2_geometry_msgs)
 add_compile_definitions("HAVE_CSTDDEF")
 # add_compile_options(-Wpedantic -Wall -Wextra)
 

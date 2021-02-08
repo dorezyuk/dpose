@@ -23,6 +23,7 @@
  */
 #include <dpose_goal_tolerance/dpose_goal_tolerance.hpp>
 
+#include <angles/angles.h>
 #include <costmap_2d/cost_values.h>
 #include <pluginlib/class_list_macros.h>
 #include <ros/ros.h>
@@ -33,6 +34,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <stdexcept>
 #include <string>
 #include <utility>
 
@@ -113,6 +115,47 @@ lethal_cells_within(costmap_2d::Costmap2D &_map,
   return cells;
 }
 
+pose_regularization::pose_regularization(number _weight_lin,
+                                         number _weight_rot) :
+    weight_lin_(_weight_lin), weight_rot_(_weight_rot) {
+  if (!weight_lin_ && !weight_rot_)
+    throw std::invalid_argument("both weights cannot be zero");
+}
+
+void
+pose_regularization::init(const pose &_start, const pose &_goal) noexcept {
+  // get the linear and rotational normalization weights.
+  auto w_lin = (_start - _goal).segment(0, 2).squaredNorm();
+  auto w_rot =
+      std::pow(angles::shortest_angular_distance(_start.z(), _goal.z()), 2);
+
+  // avoid division by zero
+  w_lin = weight_lin_ / std::max(w_lin, 1e-3);
+  w_rot = weight_rot_ / std::max(w_rot, 1e-3);
+  goal_ = _goal;
+  norm_ = pose(w_lin, w_lin, w_rot);
+  // the hessian is a constant eye matrix of the form
+  // [[2 * w_lin, 0, 0],
+  //  [0, 2 * w_lin, 0],
+  //  [0, 0, 2 * w_rot]]
+  H_ = 2 * norm_.asDiagonal();
+}
+
+number
+pose_regularization::get_cost(const pose &_pose) noexcept {
+  // get the distance to the goal
+  diff_ = _pose - goal_;
+  diff_.z() = angles::normalize_angle(diff_.z());
+
+  // the jacobian is
+  // 2 * [w_lin * delta_x, w_lin * delta_y, w_rot * delta_theta]^T.
+  J_ = 2 * (norm_.array() * diff_.array()).matrix();
+
+  // the cost is
+  // w_lin * delta_x^2 + w_lin * delta_y^2 + w_rot * delta_theta^2
+  return norm_.dot(diff_.array().pow(2).matrix());
+}
+
 problem::problem(costmap &_map, const pose_gradient::parameter &_param) :
     costmap_(&_map), pg_(make_footprint(*_map.getLayeredCostmap()), _param) {}
 
@@ -127,13 +170,21 @@ problem::on_new_x(index _n, const number *_x) {
   // flip the signs
   J_ *= -1;
   H_ *= -1;
+
+  // apply the regularization for start and goal (if defined)
+  for (auto &reg : regs_) {
+    cost_ += reg.get_cost(p);
+    J_ += reg.get_jacobian();
+    H_ += reg.get_hessian();
+  }
 }
 
 void
-problem::init(const pose &_pose, number _lin_tol, number _rot_tol) {
-  pose_ = _pose;
-  lin_tol_sq_ = std::pow(_lin_tol, 2);
-  rot_tol_sq_ = std::pow(_rot_tol, 2);
+problem::init(const pose &_start, const pose &_goal,
+              const DposeGoalToleranceConfig &_param) {
+  pose_ = _goal;
+  lin_tol_sq_ = std::pow(_param.lin_tolerance, 2);
+  rot_tol_sq_ = std::pow(_param.rot_tolerance, 2);
 
   // get the bounding box
   const auto kernel_box = pg_.get_data().core.get_box();
@@ -142,7 +193,7 @@ problem::init(const pose &_pose, number _lin_tol, number _rot_tol) {
   const auto max_coeff = kernel_box.array().abs().maxCoeff();
 
   // add the tolerance to get the halfed size of the rectangle
-  const auto h = (max_coeff + std::abs(_lin_tol));
+  const auto h = (max_coeff + std::abs(_param.lin_tolerance));
 
   // get the final search box
   rectangle<int> search_box;
@@ -158,6 +209,45 @@ problem::init(const pose &_pose, number _lin_tol, number _rot_tol) {
 
   // now get the lethal cells
   lethal_cells_ = lethal_cells_within(*costmap_->getCostmap(), search_box);
+
+  // setup the additional penalties
+  regs_.clear();
+  if (_param.weight_goal_lin || _param.weight_goal_rot) {
+    regs_.emplace_back(_param.weight_goal_lin, _param.weight_goal_rot);
+    // we normalize by the tolerance
+    pose start = _goal + pose(_param.lin_tolerance, 0, _param.rot_tolerance);
+    regs_.back().init(start, _goal);
+  }
+
+  if (_param.weight_start_lin || _param.weight_start_rot) {
+    regs_.emplace_back(_param.weight_start_lin, _param.weight_start_rot);
+    // the error is the distance to the start - hence the _start pose is the
+    // "goal".
+    pose start = _start;
+
+    // if the distance between _start and _goal is bigger then the tolerance, we
+    // can never reach "zero" costs. we hence place a fake start pose at the
+    // goal-tolerance distance from _goal.
+    pose diff = _start - _goal;
+    diff.z() = angles::normalize_angle(diff.z());
+
+    // get the "norms"
+    const auto diff_lin_norm = diff.segment(0, 2).norm();
+    const auto diff_rot_norm = std::abs(diff.z());
+
+    // linear part (we drop the segment(0, 2) extensions and corrent the theta
+    // below).
+    if (diff_lin_norm != 0 && diff_lin_norm > _param.lin_tolerance)
+      start = _goal + diff * _param.lin_tolerance / diff_lin_norm;
+
+    // angular part (with theta correction)
+    if (diff_rot_norm != 0 && diff_rot_norm > _param.rot_tolerance)
+      start.z() = _goal.z() + diff.z() * _param.rot_tolerance / diff_rot_norm;
+    else
+      start.z() = _start.z();
+
+    regs_.back().init(_goal, start);
+  }
 }
 
 bool
@@ -314,7 +404,7 @@ problem::finalize_solution(Ipopt::SolverReturn _status, index _n,
   pose_ += p;
 }
 
-problem::pose
+pose
 to_cell(const DposeGoalTolerance::Pose &_pose,
         const DposeGoalTolerance::Map &_map) {
   // check if the _goal is in the same frame as the costmap.
@@ -328,12 +418,11 @@ to_cell(const DposeGoalTolerance::Pose &_pose,
 
   // get yaw
   const auto yaw = tf2::getYaw(_pose.pose.orientation);
-  return problem::pose{static_cast<problem::number>(x),
-                       static_cast<problem::number>(y), yaw};
+  return pose{static_cast<number>(x), static_cast<number>(y), yaw};
 }
 
 DposeGoalTolerance::Pose
-to_msg(const problem::pose &_pose, const DposeGoalTolerance::Map &_map) {
+to_msg(const pose &_pose, const DposeGoalTolerance::Map &_map) {
   // check to prevent underflow
   if ((_pose.segment(0, 2).array() < 0).any())
     throw std::runtime_error("negative pose");
@@ -356,8 +445,8 @@ to_msg(const problem::pose &_pose, const DposeGoalTolerance::Map &_map) {
 bool
 DposeGoalTolerance::preProcess(Pose &_start, Pose &_goal) {
   // this class is a noop if both tolerances are zero
-  if(lin_tol_ <= 0 && rot_tol_ <= 0){
-    DP_DEBUG("class disabled: " << lin_tol_ << ", " << rot_tol_);
+  if (param_.lin_tolerance <= 0 && param_.rot_tolerance <= 0) {
+    DP_INFO_LOG("class disabled");
     return true;
   }
 
@@ -369,9 +458,10 @@ DposeGoalTolerance::preProcess(Pose &_start, Pose &_goal) {
   }
 
   // convert the metric input to cells - that's what we need for the solver
-  problem::pose cell_pose;
+  pose c_goal, c_start;
   try {
-    cell_pose = to_cell(_goal, *map_);
+    c_goal = to_cell(_goal, *map_);
+    c_start = to_cell(_start, *map_);
   }
   catch (std::runtime_error &_ex) {
     DP_WARN_LOG("cannot transform to cells: " << _ex.what());
@@ -379,7 +469,7 @@ DposeGoalTolerance::preProcess(Pose &_start, Pose &_goal) {
   }
 
   auto our_problem = dynamic_cast<problem *>(Ipopt::GetRawPtr(problem_));
-  our_problem->init(cell_pose, lin_tol_, rot_tol_);
+  our_problem->init(c_start, c_goal, param_);
 
   auto status = solver_->OptimizeTNLP(problem_);
 
@@ -427,13 +517,15 @@ DposeGoalTolerance::initialize(const std::string &_name, Map *_map) {
   map_ = _map;
   ros::NodeHandle nh("~" + _name);
 
-  lin_tol_ = nh.param("lin_tolerance", lin_tol_);
-  rot_tol_ = nh.param("rot_tolerance", rot_tol_);
-  // convert it to cell-distance
-  lin_tol_ /= map_->getCostmap()->getResolution();
+  // lin_tol_ = nh.param("lin_tolerance", lin_tol_);
+  // rot_tol_ = nh.param("rot_tolerance", rot_tol_);
+  // // convert it to cell-distance
+  // lin_tol_ /= map_->getCostmap()->getResolution();
 
+  // read the padding parameter and safely cast it to unsigned int
   const int padding = nh.param("padding", 2);
-  problem_ = new problem(*map_, {padding, true});
+  const auto u_padding = static_cast<unsigned int>(std::max(padding, 0));
+  problem_ = new problem(*map_, {u_padding, true});
   solver_ = IpoptApplicationFactory();
 
   // configure the solver
@@ -452,9 +544,9 @@ DposeGoalTolerance::initialize(const std::string &_name, Map *_map) {
   cfg_server_.reset(new cfg_server(nh));
   cfg_server_->setCallback(
       [&](DposeGoalToleranceConfig &_cfg, uint32_t _level) {
+        param_ = _cfg;
         // lin is in cells
-        lin_tol_ = _cfg.lin_tolerance / map_->getCostmap()->getResolution();
-        rot_tol_ = _cfg.rot_tolerance;
+        param_.lin_tolerance /= map_->getCostmap()->getResolution();
       });
 }
 

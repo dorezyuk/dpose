@@ -42,6 +42,70 @@
 
 namespace dpose_goal_tolerance {
 
+using index = Ipopt::Index;
+using number = Ipopt::Number;
+using pose = Eigen::Matrix<number, 3, 1>;
+using dpose_core::pose_gradient;
+
+/**
+ * @brief Additional cost generator penalizing the distance to the _goal.
+ *
+ * The class implements the following cost
+ * f0 = w_lin * ((x - x_g)^2 + (y - y_g)^2)
+ * f1 = w_rot * (theta - theta_g)^2
+ * f = f0 + f1
+ *
+ * The index g (in x_g for example) denote the goal pose, passed though the init
+ * function. The variables w_lin and w_rot represent weights for linear and
+ * angular errors. These weights are the weights passed to the constructor
+ * scaled by the squared distance between goal and start poses.
+ *
+ * Call first pose_regularization::get_cost and retrieve the corresponsing
+ * Jacobian and Hessian via pose_regularization::get_jacobian and
+ * pose_regularization::get_hessian().
+ */
+struct pose_regularization {
+  /// @param _weight_lin unscaled weight for the linear error
+  /// @param _weight_rot unscaled weight for the angular error
+  /// @throw std::invalid_argument if both weights are zero
+  pose_regularization(number _weight_lin, number _weight_rot);
+
+  /// @brief init method. calls this if start or goal change
+  /// @param _goal the pose to which we want to be close
+  /// @param _start the pose which is used to normalize the weights
+  void
+  init(const pose &_start, const pose &_goal) noexcept;
+
+  /// @brief computes the cost, Jacobian and Hessian with respect to the _pose
+  /// @param _pose current pose
+  number
+  get_cost(const pose &_pose) noexcept;
+
+  /// @brief returns the current Jacobian (from get_cost call)
+  inline const pose_gradient::jacobian &
+  get_jacobian() const noexcept {
+    return J_;
+  }
+
+  /// @brief returns the current Hessian (from get_cost call)
+  inline const pose_gradient::hessian &
+  get_hessian() const noexcept {
+    return H_;
+  }
+
+private:
+  // cache
+  pose_gradient::jacobian J_;
+  pose_gradient::hessian H_;
+  pose goal_;
+  pose norm_;
+  pose diff_;
+
+  // parameters
+  number weight_lin_;  ///< unscaled weight for the linear error
+  number weight_rot_;  ///< unscaled weight for the angular error
+};
+
 /**
  * @brief Problem definition for pose cost optimization under constraints.
  *
@@ -53,14 +117,8 @@ namespace dpose_goal_tolerance {
  * It searches for the displacements x to given initial pose p, such that the
  * cost of the displaced pose (p + x) is minimized. The displacement x is
  * constrained translationally (g0) and rotationally (g1).
- *
  */
 struct problem : public Ipopt::TNLP {
-  using index = Ipopt::Index;
-  using number = Ipopt::Number;
-  using pose = Eigen::Matrix<number, 3, 1>;
-  using pose_gradient = dpose_core::pose_gradient;
-
 private:
   using cell_vector = dpose_core::cell_vector;
   using costmap = costmap_2d::Costmap2DROS;
@@ -80,6 +138,8 @@ private:
   costmap *costmap_ = nullptr;  ///< pointer to a costmap
   cell_vector lethal_cells_;    ///< vector of lethal cells
 
+  std::vector<pose_regularization> regs_;
+
   void
   on_new_x(index _n, const number *_x);
 
@@ -87,9 +147,15 @@ public:
   problem() = default;
   problem(costmap &_map, const pose_gradient::parameter &_param);
 
+  /// @brief init function which stets the poses and parameters
+  /// @param _start current pose of the robot
+  /// @param _goal desired goal pose (subject to optimization)
+  /// @param _param parameters
   void
-  init(const pose &_pose, number _lin_tol, number _rot_tol);
+  init(const pose &_start, const pose &_goal,
+       const DposeGoalToleranceConfig &_param);
 
+  /// @brief returns the final pose after the optimization
   inline const pose &
   get_pose() const noexcept {
     return pose_;
@@ -161,14 +227,11 @@ private:
   Map *map_ = nullptr;
   ros::Publisher pose_pub_;
 
-  // parameters
-  double rot_tol_ = 1;
-  double lin_tol_ = 1;
-
   // dynamic reconfigure
   using cfg_server = dynamic_reconfigure::Server<DposeGoalToleranceConfig>;
   using cfg_server_ptr = std::unique_ptr<cfg_server>;
 
+  DposeGoalToleranceConfig param_;
   // shutdown the server first
   cfg_server_ptr cfg_server_;
 };

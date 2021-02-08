@@ -520,11 +520,6 @@ DposeGoalTolerance::initialize(const std::string &_name, Map *_map) {
   map_ = _map;
   ros::NodeHandle nh("~" + _name);
 
-  // lin_tol_ = nh.param("lin_tolerance", lin_tol_);
-  // rot_tol_ = nh.param("rot_tolerance", rot_tol_);
-  // // convert it to cell-distance
-  // lin_tol_ /= map_->getCostmap()->getResolution();
-
   // read the padding parameter and safely cast it to unsigned int
   const int padding = nh.param("padding", 2);
   const auto u_padding = static_cast<unsigned int>(std::max(padding, 0));

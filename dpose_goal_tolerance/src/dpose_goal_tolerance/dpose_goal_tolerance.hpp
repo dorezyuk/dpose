@@ -39,6 +39,7 @@
 
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace dpose_goal_tolerance {
 
@@ -222,6 +223,7 @@ struct DposeGoalTolerance : public gpp_interface::PrePlanningInterface {
   bool
   preProcess(Pose &_start, Pose &_goal) override;
 
+  /// @brief called by gpp-plugin
   void
   initialize(const std::string &_name, Map *_map) override;
 

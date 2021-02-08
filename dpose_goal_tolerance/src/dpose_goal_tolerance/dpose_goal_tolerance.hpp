@@ -161,6 +161,8 @@ public:
     return pose_;
   }
 
+  // ipopt functions below
+
   bool
   get_nlp_info(index &_n, index &_m, index &_nonzero_jac_g,
                index &_nonzero_h_lag, IndexStyleEnum &_index_style) override;
@@ -212,6 +214,11 @@ public:
  * See the README.md for more details.
  */
 struct DposeGoalTolerance : public gpp_interface::PrePlanningInterface {
+
+  /// @brief will move the _goal pose out of collision
+  /// @param _start current pose of the robot (won't be changed)
+  /// @param _goal goal pose (subject to optimization)
+  /// @return true if the goal pose could be moved successfully
   bool
   preProcess(Pose &_start, Pose &_goal) override;
 

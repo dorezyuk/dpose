@@ -28,6 +28,7 @@
 
 #include <Eigen/Dense>
 
+#include <array>
 #include <stdexcept>
 #include <vector>
 
@@ -60,6 +61,7 @@ using cell = Eigen::Vector2i;
 using cell_vector = std::vector<cell>;
 
 // forward-decleration so we can befriend these structures together.
+// todo remove this
 struct jacobian_data;
 struct hessian_data;
 
@@ -71,21 +73,6 @@ struct cost_data {
 
   cost_data() = default;
   cost_data(const polygon& _footprint, size_t _padding);
-
-  /// @brief returns the cost at the given x and y.
-  /// @param _x column of the pixel.
-  /// @param _y row 0f the pixel.
-  inline double
-  at(int _y, int _x) const {
-    return static_cast<double>(cost.at<float>(_y, _x));
-  }
-
-  /// @brief returns the cost at the given pixel.
-  /// @param _cell coordinate of the pixel.
-  inline double
-  at(const cell& _cell) const {
-    return at(_cell.y(), _cell.x());
-  }
 
   inline const cv::Mat&
   get_data() const noexcept {
@@ -111,58 +98,29 @@ private:
 /**
  * @brief struct holding the data required for the jacobians.
  *
- * Use jacobian_data::at to get the jacobian for a pixel.
  * The Jacobian has the form \f$ [f_x, f_y, f_{\theta}]^T \f$, where the
  * \f$ f_x \f$ represents the partial derivative of the cost f with respect to
  * x.
  */
 struct jacobian_data {
-  // the Hessian is build on top of the Jacobian
-  friend hessian_data;
-
   jacobian_data() = default;
   explicit jacobian_data(const cost_data& _cost);
 
-  /// @brief the data-structure for the user.
-  using jacobian = Eigen::Vector3d;
-
-  /// @brief returns the jacobian for given x and y.
-  /// @param _x column of the pixel.
-  /// @param _y row 0f the pixel.
-  inline jacobian
-  at(int _y, int _x) const {
-    return {static_cast<double>(d_x.at<float>(_y, _x)),
-            static_cast<double>(d_y.at<float>(_y, _x)),
-            static_cast<double>(d_z.at<float>(_y, _x))};
-  }
-
-  /// @brief returns the jacobian at the given pixel.
-  /// @param _cell coordinate of the pixel.
-  inline jacobian
-  at(const cell& _cell) const {
-    return at(_cell.y(), _cell.x());
-  }
-
-  inline double
-  at(size_t _z, int _y, int _x) const {
-    switch (_z) {
-      case 0: return static_cast<double>(d_x.at<float>(_y, _x));
-      case 1: return static_cast<double>(d_y.at<float>(_y, _x));
-      case 2: return static_cast<double>(d_z.at<float>(_y, _x));
-      default: throw std::out_of_range("invalid z index");
-    }
+  /// @brief returns the matrix at the given index.
+  /// @throw std::out_of_range if _z is bigger than 5.
+  inline const cv::Mat&
+  at(size_t _z) const {
+    return d_array.at(_z);
   }
 
 private:
-  cv::Mat d_x;  ///< derivative of the cost in x
-  cv::Mat d_y;  ///< derivative of the cost in y
-  cv::Mat d_z;  ///< derivative of the cost in z (theta)
+  // the buffer hold the derivatives of cost with respect to x, y and theta
+  std::array<cv::Mat, 3> d_array;
 };
 
 /**
  * @brief struct holding the data required for the hessians.
  *
- * Use hessian_data::get to get the hessian for a pixel.
  * The Hessian has the form
  * \f[
  * \begin{bmatrix}
@@ -179,51 +137,17 @@ struct hessian_data {
   hessian_data() = default;
   hessian_data(const cost_data& _cost, const jacobian_data& _jacobian);
 
-  /// @brief the data-structure for the user.
-  using hessian = Eigen::Matrix3d;
-
-  /// @brief returns the hessian for given x and y.
-  /// @param _x column of the pixel.
-  /// @param _y row 0f the pixel.
-  inline hessian
-  at(int _y, int _x) const {
-    // todo check if this allocation hurts us...
-    hessian H;
-    // clang-format off
-    H << d_x_x.at<float>(_y, _x), d_y_x.at<float>(_y, _x), d_z_x.at<float>(_y, _x),
-         d_y_x.at<float>(_y, _x), d_y_y.at<float>(_y, _x), d_y_z.at<float>(_y, _x),
-         d_z_x.at<float>(_y, _x), d_y_z.at<float>(_y, _x), d_z_z.at<float>(_y, _x);
-    // clang-format on
-    return H;
-  }
-
-  /// @brief returns the hessian at the given pixel.
-  /// @param _cell coordinate of the pixel.
-  inline hessian
-  at(const cell& _cell) const {
-    return at(_cell.y(), _cell.x());
-  }
-
-  double
-  at(size_t _z, int _y, int _x) const {
-    switch (_z) {
-      case 0: return d_x_x.at<float>(_y, _x);
-      case 1: return d_y_x.at<float>(_y, _x);
-      case 2: return d_z_x.at<float>(_y, _x);
-      case 3: return d_y_y.at<float>(_y, _x);
-      case 4: return d_y_z.at<float>(_y, _x);
-      case 5: return d_z_z.at<float>(_y, _x);
-      default: throw std::out_of_range("invalid z index");
-    }
+  /// @brief returns the matrix at the given index.
+  /// @throw std::out_of_range if _z is bigger than 5.
+  inline const cv::Mat&
+  at(size_t _z) const {
+    return d_array.at(_z);
   }
 
 private:
-  cv::Mat d_x_x;  ///< derivative of the cost in x,x
-  cv::Mat d_y_x;  ///< derivative of the cost in y,x
-  cv::Mat d_z_x;  ///< derivative of the cost in theta,x
-  cv::Mat d_y_y;  ///< derivative of the cost in y,y
-  cv::Mat d_y_z;  ///< derivative of the cost in y,theta
-  cv::Mat d_z_z;  ///< derivative of the cost in theta,theta
+  // the buffer holds the parital derivatives of cost with respect to (x, x),
+  // (y, x), (theta, x), (y, y), (y, theta) and (theta theta).
+  std::array<cv::Mat, 6> d_array;
 };
 
 /// @brief POD holding all the data required for optimization
@@ -247,8 +171,8 @@ struct pose_gradient {
   };
 
   // the three arguments for get_pose
-  using jacobian = jacobian_data::jacobian;
-  using hessian = hessian_data::hessian;
+  using jacobian = Eigen::Vector3d;
+  using hessian = Eigen::Matrix3d;
   using pose = Eigen::Vector3d;
 
   /// @brief sets up internal data based on _footprint and _param.

@@ -23,17 +23,18 @@
  */
 #include <dpose_goal_tolerance/dpose_goal_tolerance.hpp>
 
+#include <angles/angles.h>
 #include <costmap_2d/cost_values.h>
 #include <pluginlib/class_list_macros.h>
 #include <ros/ros.h>
-#include <tf2/LinearMath/Quaternion.h>
 #include <tf2/utils.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
-#include <xmlrpcpp/XmlRpcException.h>
-#include <xmlrpcpp/XmlRpcValue.h>
 
+#include <boost/thread/lock_types.hpp>
+
+#include <algorithm>
 #include <cmath>
-#include <memory>
+#include <stdexcept>
 #include <string>
 #include <utility>
 
@@ -41,6 +42,7 @@
 constexpr char _name[] = "[dpose_goal_tolerance]: ";
 
 // custom prints
+#define DP_DEBUG(args) ROS_DEBUG_STREAM(_name << args)
 #define DP_INFO_LOG(args) ROS_INFO_STREAM(_name << args)
 #define DP_WARN_LOG(args) ROS_WARN_STREAM(_name << args)
 #define DP_ERROR_LOG(args) ROS_ERROR_STREAM(_name << args)
@@ -48,147 +50,33 @@ constexpr char _name[] = "[dpose_goal_tolerance]: ";
 
 namespace dpose_goal_tolerance {
 
-namespace internal {
-
-tolerance::angle_tolerance::angle_tolerance(double _tol) :
-    tol_(angles::normalize_angle_positive(_tol)) {}
-
-tolerance::sphere_tolerance::sphere_tolerance(const pose& _norm) :
-    radius_(_norm.norm()) {}
-
-tolerance::box_tolerance::box_tolerance(const pose& _box) :
-    box_(_box.array().abs().matrix()) {}
-
-tolerance::tolerance_ptr
-tolerance::factory(const mode& _m, const pose& _p) noexcept {
-  switch (_m) {
-    case mode::NONE: return nullptr;
-    case mode::ANGLE: return tolerance_ptr{new angle_tolerance(_p.z())};
-    case mode::SPHERE: return tolerance_ptr{new sphere_tolerance(_p)};
-    case mode::BOX: return tolerance_ptr{new box_tolerance(_p)};
-  }
-  return nullptr;
-}
-
-tolerance::tolerance(const mode& _m, const pose& _center) {
-  if (_m != mode::NONE)
-    impl_.emplace_back(factory(_m, _center));
-}
-
-tolerance::tolerance(const list_type& _list) {
-  for (const auto& pair : _list) {
-    if (pair.first != mode::NONE)
-      impl_.emplace_back(factory(pair.first, pair.second));
-  }
-}
-
-// short-cuts
-using XmlRpc::XmlRpcException;
-using XmlRpc::XmlRpcValue;
-
-/// @brief returns a value from _v under _tag or the _default value.
-/// @param _v data-storage
-/// @param _tag the tag under which the data is saved
-/// @param _default the default value
-/// If anything goes wrong, the function will fall-back to the _default value.
-template <typename _T>
-_T
-_getElement(const XmlRpcValue& _v, const std::string& _tag,
-            const _T& _default) noexcept {
-  // check if the tag is defined
-  if (!_v.hasMember(_tag))
-    return _default;
-
-  // try to get the desired value
-  try {
-    return static_cast<_T>(_v[_tag]);
-  }
-  catch (const XmlRpcException& _ex) {
-    return _default;
-  }
-}
-
-/// @brief returns a pose from the element _v.
-/// _v can have the form {"x": a, "y": b, "z": c}.
-/// missing values will be replaced with 0
-inline tolerance::pose
-_getPose(const XmlRpcValue& _v) noexcept {
-  return {_getElement(_v, "x", 0.), _getElement(_v, "y", 0.),
-          _getElement(_v, "z", 0.)};
-}
-
-/// @brief builds a tolerance class from the parameters at the ros-server
-/// @param _name of the parameter
-/// @param _nh node-handle with the right namespace
-/*
- * your yaml file might look something like
- *
- * my_parameter:
- *  - {type: "box", x: 0.1, y: 0.2, z: inf}
- *  - {type: "sphere", x: 0.5}
- *  - {type: "angular", x: 0.2}
- *
- * Then you can load it with
- * ros::NodeHandle nh("~");
- * const auto tolerance = _loadTolerance("my_parameter", nh);
- */
-tolerance
-_loadTolerance(const std::string& _name, ros::NodeHandle& _nh) {
-  XmlRpcValue raw;
-
-  // load the data from the param server.
-  // if the user does not provide anything, we don't have any tolerance defined
-  if (!_nh.getParam(_name, raw))
-    return {};
-
-  // the tolerances must be defined as an array
-  if (raw.getType() != XmlRpcValue::TypeArray) {
-    DP_WARN_LOG(_name << " is not an array");
-    return {};
-  }
-
-  // allocate space.
-  tolerance::list_type impl;
-  impl.reserve(raw.size());
-
-  // iterate over the array
-  for (int ii = 0; ii != raw.size(); ++ii) {
-    // short-cut access to the current element
-    const auto& element = raw[ii];
-
-    // get the tag - we promise not to throw anything
-    const auto tag = _getElement<std::string>(element, "type", "none");
-    const auto pose = _getPose(element);
-
-    // "switch-case" on the different modes
-    if (tag == "angle") {
-      impl.emplace_back(tolerance::mode::ANGLE, pose);
-    }
-    else if (tag == "sphere") {
-      impl.emplace_back(tolerance::mode::SPHERE, pose);
-    }
-    else if (tag == "box") {
-      impl.emplace_back(tolerance::mode::BOX, pose);
-    }
-    else {
-      DP_INFO_LOG("ignoring the tag \"" << tag << "\"");
-    }
-  }
-  return {impl};
-}
+using namespace dpose_core;
 
 cell_vector
-lethal_cells_within(const costmap_2d::Costmap2D& _map,
-                    const rectangle<int>& _bounds) {
+lethal_cells_within(costmap_2d::Costmap2D &_map,
+                    const rectangle<int> &_bounds) {
+  // enforce that bounds is within costmap
+  rectangle<int> search_box = _bounds.array().max(0).matrix();
+
+  // check if size is zero to prevent underflow
+  if (_map.getSizeInCellsX() == 0 || _map.getSizeInCellsY() == 0)
+    return {};
+
+  // clang-format off
+  search_box.row(0) = search_box.row(0).array().min(_map.getSizeInCellsX() - 1).matrix();
+  search_box.row(1) = search_box.row(1).array().min(_map.getSizeInCellsY() - 1).matrix();
+  // clang-format on
+
   // first swipe to count the number of elements
-  // todo enforce that bounds is within costmap
-  using dpose_core::to_rays;
-  const auto rays = to_rays(_bounds);
+  const auto rays = to_rays(search_box);
 
   size_t count = 0;
+
+  // lock the costmap
+  boost::unique_lock<boost::recursive_mutex> lock(*_map.getMutex());
   const auto char_map = _map.getCharMap();
-  for (const auto& ray : rays) {
-    const auto& y = ray.first;
+  for (const auto &ray : rays) {
+    const auto &y = ray.first;
     // debug-asserts on the indices
     assert(y >= 0 && "y index cannot be negative");
     assert(y < _map.getSizeInCellsY() && "y index out of bounds");
@@ -208,8 +96,8 @@ lethal_cells_within(const costmap_2d::Costmap2D& _map,
   auto dd_iter = cells.begin();
 
   // write the cells
-  for (const auto& ray : rays) {
-    const auto& y = ray.first;
+  for (const auto &ray : rays) {
+    const auto &y = ray.first;
     // the conversion to x-value from index is x = index - (y * x_size). the
     // y_offset is here the second part of the equation.
     const auto y_offset = y * _map.getSizeInCellsX();
@@ -227,94 +115,341 @@ lethal_cells_within(const costmap_2d::Costmap2D& _map,
   return cells;
 }
 
-gradient_decent::gradient_decent(parameter&& _param) noexcept :
-    param_(std::move(_param)) {}
+pose_regularization::pose_regularization(number _weight_lin,
+                                         number _weight_rot) :
+    weight_lin_(_weight_lin), weight_rot_(_weight_rot) {
+  if (!weight_lin_ && !weight_rot_)
+    throw std::invalid_argument("both weights cannot be zero");
+}
 
-std::pair<float, Eigen::Vector3d>
-gradient_decent::solve(const pose_gradient& _pg,
-                       const pose_gradient::pose& _start,
-                       const cell_vector& _cells) const {
-  // super simple gradient decent algorithm with a limit on the max step
-  // for now we set it to 1 cell size.
-  std::pair<float, Eigen::Vector3d> res{0.0F, _start};
-  dpose_core::jacobian_data::jacobian J;
-  for (size_t ii = 0; ii != param_.iter; ++ii) {
-    // get the derivative (d)
-    res.first =
-        _pg.get_cost(res.second, _cells.begin(), _cells.end(), &J, nullptr);
+void
+pose_regularization::init(const pose &_start, const pose &_goal) noexcept {
+  // get the linear and rotational normalization weights.
+  auto w_lin = (_start - _goal).segment(0, 2).squaredNorm();
+  auto w_rot =
+      std::pow(angles::shortest_angular_distance(_start.z(), _goal.z()), 2);
 
-    // scale the vector such that its norm is at most the _param.step
-    // (the scaling is done seperately for translation (t) and rotation (r))
-    const auto norm_t = std::max(J.segment(0, 2).norm(), param_.step_t);
-    const auto norm_r = std::max(std::abs(J(2)), param_.step_r);
-    J.segment(0, 2) *= (param_.step_t / norm_t);
-    J(2) *= (param_.step_r / norm_r);
+  // avoid division by zero
+  w_lin = weight_lin_ / std::max(w_lin, 1e-3);
+  w_rot = weight_rot_ / std::max(w_rot, 1e-3);
+  goal_ = _goal;
+  norm_ = pose(w_lin, w_lin, w_rot);
+  // the hessian is a constant eye matrix of the form
+  // [[2 * w_lin, 0, 0],
+  //  [0, 2 * w_lin, 0],
+  //  [0, 0, 2 * w_rot]]
+  H_ = 2 * norm_.asDiagonal();
+}
 
-    // the "gradient decent"
-    res.second -= J;
-    if (res.first <= param_.epsilon || !param_.tol.within(_start, res.second))
-      break;
+number
+pose_regularization::get_cost(const pose &_pose) noexcept {
+  // get the distance to the goal
+  diff_ = _pose - goal_;
+  diff_.z() = angles::normalize_angle(diff_.z());
+
+  // the jacobian is
+  // 2 * [w_lin * delta_x, w_lin * delta_y, w_rot * delta_theta]^T.
+  J_ = 2 * (norm_.array() * diff_.array()).matrix();
+
+  // the cost is
+  // w_lin * delta_x^2 + w_lin * delta_y^2 + w_rot * delta_theta^2
+  return norm_.dot(diff_.array().pow(2).matrix());
+}
+
+problem::problem(costmap &_map, const pose_gradient::parameter &_param) :
+    costmap_(&_map), pg_(make_footprint(*_map.getLayeredCostmap()), _param) {}
+
+void
+problem::on_new_x(index _n, const number *_x) {
+  // convert ipopt to eigen
+  const pose offset(_x[0], _x[1], _x[2]);
+  const pose p = offset + pose_;
+
+  // query the data
+  cost_ = pg_.get_cost(p, lethal_cells_.begin(), lethal_cells_.end(), &J_, &H_);
+  // flip the signs
+  J_ *= -1;
+  H_ *= -1;
+
+  // apply the regularization for start and goal (if defined)
+  for (auto &reg : regs_) {
+    cost_ += reg.get_cost(p);
+    J_ += reg.get_jacobian();
+    H_ += reg.get_hessian();
   }
-  return res;
 }
 
-// some shortcuts for the conversion functions below
-using costmap_2d::Costmap2D;
-using Eigen::Isometry2d;
-using Eigen::Vector3d;
-using geometry_msgs::PoseStamped;
+void
+problem::init(const pose &_start, const pose &_goal,
+              const DposeGoalToleranceConfig &_param) {
+  pose_ = _goal;
+  lin_tol_sq_ = std::pow(_param.lin_tolerance, 2);
+  rot_tol_sq_ = std::pow(_param.rot_tolerance, 2);
 
-/// @brief converts PoseStamped to Eigen::Vector3d
-Vector3d
-_to_eigen(const PoseStamped& _msg) noexcept {
-  Vector3d out;
-  out.x() = _msg.pose.position.x;
-  out.y() = _msg.pose.position.y;
-  out.z() = tf2::getYaw(_msg.pose.orientation);
-  return out;
+  // get the bounding box
+  const auto kernel_box = pg_.get_data().core.get_box();
+
+  // get the max. thats a simplification to deal with rotations
+  const auto max_coeff = kernel_box.array().abs().maxCoeff();
+
+  // add the tolerance to get the halfed size of the rectangle
+  const auto h = (max_coeff + std::abs(_param.lin_tolerance));
+
+  // get the final search box
+  rectangle<int> search_box;
+  // clang-format off
+  search_box << -h,  h, h, -h, -h,
+                -h, -h, h,  h, -h;
+  // clang-format on
+  search_box = (search_box.cast<double>().colwise() + pose_.segment(0, 2))
+                   .array()
+                   .round()
+                   .matrix()
+                   .cast<int>();
+
+  // now get the lethal cells
+  lethal_cells_ = lethal_cells_within(*costmap_->getCostmap(), search_box);
+
+  // setup the additional penalties
+  regs_.clear();
+  if (_param.weight_goal_lin || _param.weight_goal_rot) {
+    regs_.emplace_back(_param.weight_goal_lin, _param.weight_goal_rot);
+    // we normalize by the tolerance
+    pose start = _goal + pose(_param.lin_tolerance, 0, _param.rot_tolerance);
+    regs_.back().init(start, _goal);
+  }
+
+  if (_param.weight_start_lin || _param.weight_start_rot) {
+    regs_.emplace_back(_param.weight_start_lin, _param.weight_start_rot);
+    // the error is the distance to the start - hence the _start pose is the
+    // "goal".
+    pose start = _start;
+
+    // if the distance between _start and _goal is bigger then the tolerance, we
+    // can never reach "zero" costs. we hence place a fake start pose at the
+    // goal-tolerance distance from _goal.
+    pose diff = _start - _goal;
+    diff.z() = angles::normalize_angle(diff.z());
+
+    // get the "norms"
+    const auto diff_lin_norm = diff.segment(0, 2).norm();
+    const auto diff_rot_norm = std::abs(diff.z());
+
+    // linear part (we drop the segment(0, 2) extensions and corrent the theta
+    // below).
+    if (diff_lin_norm != 0 && diff_lin_norm > _param.lin_tolerance)
+      start = _goal + diff * _param.lin_tolerance / diff_lin_norm;
+
+    // angular part (with theta correction)
+    if (diff_rot_norm != 0 && diff_rot_norm > _param.rot_tolerance)
+      start.z() = _goal.z() + diff.z() * _param.rot_tolerance / diff_rot_norm;
+    else
+      start.z() = _start.z();
+
+    regs_.back().init(_goal, start);
+  }
 }
-
-inline Isometry2d
-_to_eigen(double _x, double _y, double _yaw) noexcept {
-  return Eigen::Translation2d(_x, _y) * Eigen::Rotation2Dd(_yaw);
-}
-
-/// @brief converts Eigen::Vector3d to PoseStamped with the given _frame
-PoseStamped
-_to_msg(const Vector3d& _se2, const std::string& _frame) noexcept {
-  PoseStamped out;
-  out.header.frame_id = _frame;
-  out.pose.position.x = _se2.x();
-  out.pose.position.y = _se2.y();
-  // detour to tf2...
-  tf2::Quaternion q;
-  q.setRPY(0, 0, _se2.z());
-  out.pose.orientation = tf2::toMsg(q);
-  return out;
-}
-
-/// @brief converts metric input to cells using the _map's parameters
-Vector3d
-_to_cells(const Vector3d& _metric, const Costmap2D& _map) noexcept {
-  const Vector3d origin(_map.getOriginX(), _map.getOriginY(), 0);
-  const double inv_res = 1. / _map.getResolution();
-  return (_metric - origin) * inv_res;
-}
-
-/// @brief converts cell to metric output using the _map's parameters
-Vector3d
-_to_metric(const Vector3d& _cell, const Costmap2D& _map) noexcept {
-  const Vector3d origin(_map.getOriginX(), _map.getOriginY(), 0);
-  const double res = _map.getResolution();
-  return origin + _cell * res;
-}
-
-}  // namespace internal
-
-using namespace internal;
 
 bool
-DposeGoalTolerance::preProcess(Pose& _start, Pose& _goal) {
+problem::get_nlp_info(index &_n, index &_m, index &_nonzero_jac_g,
+                      index &_nonzero_h_lag, IndexStyleEnum &_index_style) {
+  _n = 3;              // we optimize in se2
+  _m = 2;              // contraints in translation and rotation
+  _nonzero_jac_g = 3;  // we just have g0 / dx0, g0 / dy and g1 /dtheta
+  _nonzero_h_lag = 6;  // dense hessian with just lower half
+  _index_style = C_STYLE;
+  return true;
+}
+
+bool
+problem::get_bounds_info(index _n, number *_x_lower, number *_x_upper, index _m,
+                         number *_g_lower, number *_g_upper) {
+  for (index nn = 0; nn != _n; ++nn) {
+    _x_lower[nn] = -1e6;
+    _x_upper[nn] = 1e6;
+  }
+  _g_lower[0] = 0;
+  _g_lower[1] = 0;
+  _g_upper[0] = lin_tol_sq_;
+  _g_upper[1] = rot_tol_sq_;
+  return true;
+}
+
+bool
+problem::get_starting_point(index _n, bool _init_x, number *_x, bool _init_z,
+                            number *_z_L, number *_z_U, index _m,
+                            bool _init_lambda, number *lambda) {
+  std::fill_n(_x, _n, 0);
+  return true;
+}
+
+bool
+problem::eval_f(index _n, const number *_x, bool _new_x, number &_f_value) {
+  if (_new_x)
+    on_new_x(_n, _x);
+  _f_value = cost_;
+  return true;
+}
+
+bool
+problem::eval_grad_f(index _n, const number *_x, bool _new_x, number *_grad_f) {
+  if (_new_x)
+    on_new_x(_n, _x);
+  std::copy_n(J_.data(), _n, _grad_f);
+  return true;
+}
+
+bool
+problem::eval_g(index _n, const number *_x, bool _new_x, index _m, number *_g) {
+  if (_new_x)
+    on_new_x(_n, _x);
+  // get the squared diff
+  const pose diff = pose(_x[0], _x[1], _x[2]).array().pow(2).matrix();
+
+  // write into the output
+  _g[0] = diff(0) + diff(1);
+  _g[1] = diff(2);
+  return true;
+}
+
+bool
+problem::eval_jac_g(index _n, const number *_x, bool _new_x, index _m,
+                    index _number_elem_jac, index *_i_row, index *_j_col,
+                    number *_jac_g) {
+  if (_new_x)
+    on_new_x(_n, _x);
+
+  if (!_jac_g) {
+    index ii = 0;
+    /* the jacobian looks like
+     * [[g0 / dx, g0 / dy, 0],
+     *  [0,     , 0,     , g1 / dtheta]]
+     */
+    _i_row[ii] = 0;
+    _j_col[ii] = 0;
+
+    _i_row[++ii] = 0;
+    _j_col[ii] = 1;
+
+    _i_row[++ii] = 1;
+    _j_col[ii] = 2;
+    assert(++ii == _number_elem_jac);
+  }
+  else {
+    // recap: our constraints are defined as
+    // g0 = x^2 + y^2
+    // g1 = theta^2
+    //
+    // the derivatives are then
+    // 0: g0 / dx = 2 * x
+    // 1: g0 / dy = 2 * y
+    // 2: g1 / dtheta = 2 * theta
+    const pose diff = pose(_x[0], _x[1], _x[2]) * 2;
+    std::copy_n(diff.data(), _number_elem_jac, _jac_g);
+  }
+
+  return true;
+}
+
+bool
+problem::eval_h(index _n, const number *_x, bool _new_x, number _obj_factor,
+                index _m, const number *_lambda, bool _new_lambda,
+                index _number_elem_hess, index *_i_row, index *_j_col,
+                number *_hess) {
+  if (_new_x)
+    on_new_x(_n, _x);
+
+  index idx = 0;
+  if (!_hess) {
+    // define the ordering for the dense hessian. the order goes like
+    // 0
+    // 1 2
+    // 3 4 5
+    for (index row = 0; row != _n; ++row) {
+      for (index col = 0; col <= row; ++col, ++idx) {
+        _i_row[idx] = row;
+        _j_col[idx] = col;
+      }
+    }
+  }
+  else {
+    // g0 / (dx dx) = 2
+    // g0 / (dy dy) = 2
+    // g1 / (dtheta dtheta) = 2
+    // all other elements are zero
+    const pose diag(_lambda[0], _lambda[0], _lambda[1]);
+    const pose_gradient::hessian H_g = 2 * diag.asDiagonal();
+    const pose_gradient::hessian H_lag = _obj_factor * H_ + H_g;
+
+    // write the hessian into the output buffer
+    _hess[idx++] = H_lag(0, 0);  // lag / (dx dx)
+    _hess[idx++] = H_lag(1, 0);  // lag / (dy dx)
+    _hess[idx++] = H_lag(1, 1);  // lag / (dy dy)
+    _hess[idx++] = H_lag(2, 0);  // lag / (dtheta dx)
+    _hess[idx++] = H_lag(2, 1);  // lag / (dtheta dy)
+    _hess[idx++] = H_lag(2, 2);  // lag / (dtheta dtheta)
+  }
+  assert(idx == _number_elem_hess);
+  return true;
+}
+
+void
+problem::finalize_solution(Ipopt::SolverReturn _status, index _n,
+                           const number *_x, const number *_z_L,
+                           const number *_z_U, index _m, const number *_g,
+                           const number *_lambda, number _obj_value,
+                           const Ipopt::IpoptData *_ip_data,
+                           Ipopt::IpoptCalculatedQuantities *_ip_cq) {
+  const pose p(_x[0], _x[1], _x[2]);
+  pose_ += p;
+}
+
+pose
+to_cell(const DposeGoalTolerance::Pose &_pose,
+        const DposeGoalTolerance::Map &_map) {
+  // check if the _goal is in the same frame as the costmap.
+  if (_pose.header.frame_id != _map.getGlobalFrameID())
+    throw std::runtime_error("pose not in the global map frame");
+
+  const auto &p = _pose.pose.position;
+  unsigned int x, y;
+  if (!_map.getCostmap()->worldToMap(p.x, p.y, x, y))
+    throw std::runtime_error("pose outside of the map");
+
+  // get yaw
+  const auto yaw = tf2::getYaw(_pose.pose.orientation);
+  return pose{static_cast<number>(x), static_cast<number>(y), yaw};
+}
+
+DposeGoalTolerance::Pose
+to_msg(const pose &_pose, const DposeGoalTolerance::Map &_map) {
+  // check to prevent underflow
+  if ((_pose.segment(0, 2).array() < 0).any())
+    throw std::runtime_error("negative pose");
+
+  // convert to unsigned int
+  unsigned int x = std::round(_pose.x());
+  unsigned int y = std::round(_pose.y());
+
+  DposeGoalTolerance::Pose msg;
+
+  // get the metric data
+  _map.getCostmap()->mapToWorld(x, y, msg.pose.position.x, msg.pose.position.y);
+  tf2::Quaternion q;
+  q.setRPY(0, 0, _pose.z());
+  msg.pose.orientation = tf2::toMsg(q);
+
+  return msg;
+}
+
+bool
+DposeGoalTolerance::preProcess(Pose &_start, Pose &_goal) {
+  // this class is a noop if both tolerances are zero
+  if (param_.lin_tolerance <= 0 && param_.rot_tolerance <= 0) {
+    DP_INFO_LOG("class disabled");
+    return true;
+  }
+
   // we will only have a valid costmap ptr, if DposeGoalTolerance::initialize
   // was called successfully.
   if (!map_) {
@@ -322,59 +457,60 @@ DposeGoalTolerance::preProcess(Pose& _start, Pose& _goal) {
     return false;
   }
 
-  // check if the _goal is in the same frame as the costmap.
-  if (_goal.header.frame_id != map_->getGlobalFrameID()) {
-    DP_WARN_LOG("unknown frame_id: " << _goal.header.frame_id);
+  // convert the metric input to cells - that's what we need for the solver
+  pose c_goal, c_start;
+  try {
+    c_goal = to_cell(_goal, *map_);
+    c_start = to_cell(_start, *map_);
+  }
+  catch (std::runtime_error &_ex) {
+    DP_WARN_LOG("cannot transform to cells: " << _ex.what());
     return false;
   }
 
-  // convert the metric input to cells - that's what we need for the
-  // gradient_decent::solve call.
-  const auto& map = *map_->getCostmap();
-  const Vector3d metric_se2 = _to_eigen(_goal);
-  const Vector3d cell_se2 = _to_cells(metric_se2, map);
+  auto our_problem = dynamic_cast<problem *>(Ipopt::GetRawPtr(problem_));
+  our_problem->init(c_start, c_goal, param_);
 
-  // get the kernel box - this box is "axis" aligned, since its in the kernel
-  // coordinate frame.
-  rectangle<int> k_box = grad_.get_data().core.get_box();
+  auto status = solver_->OptimizeTNLP(problem_);
 
-  // add the tolerance. for now we assume the tolerance is fixed
-  auto k_min = k_box.minCoeff();
-  auto k_max = k_box.maxCoeff();
-  const auto tol = k_max - k_min / 4;
-  k_min -= tol;
-  k_max += tol;
+  try {
+    _goal.pose = to_msg(our_problem->get_pose(), *map_).pose;
+  }
+  catch (std::runtime_error &_ex) {
+    DP_WARN_LOG("cannot convert to message: " << _ex.what());
+    return false;
+  }
 
-  // clang-format off
-  k_box << k_min, k_max, k_max, k_min, k_min,
-           k_min, k_min, k_max, k_max, k_min;
-  // clang-format on
+  // publish the filtered pose
+  if(status == Ipopt::Solve_Succeeded){
+    pose_pub_.publish(_goal);
+    return false;
+  }
+  return false;
+}
 
-  // transform the box into map frame
-  const Isometry2d m_T_k = _to_eigen(cell_se2.x(), cell_se2.y(), cell_se2.z());
-  const rectangle<int> m_box =
-      (m_T_k * k_box.cast<double>()).array().round().matrix().cast<int>();
+using solver_ptr = Ipopt::SmartPtr<Ipopt::IpoptApplication>;
 
-  // get the lethal cells in the "roi"
-  const cell_vector cells = lethal_cells_within(map, m_box);
+inline void
+load_ipopt_cfg(solver_ptr &_solver, ros::NodeHandle &_nh,
+               const std::string &_name, int _default) {
+  _solver->Options()->SetIntegerValue(_name, _nh.param(_name, _default));
+}
 
-  // run the optimization on the goal pose
-  const std::pair<float, Vector3d> res = opt_.solve(grad_, cell_se2, cells);
+inline void
+load_ipopt_cfg(solver_ptr &_solver, ros::NodeHandle &_nh,
+               const std::string &_name, double _default) {
+  _solver->Options()->SetNumericValue(_name, _nh.param(_name, _default));
+}
 
-  // we only update the pose, if we have "succeeded"
-  const auto success = res.first <= epsilon_;
-  if (success)
-    _goal = _to_msg(_to_metric(res.second, map), _goal.header.frame_id);
-
-  // report the result
-  DP_INFO_LOG("finished with cost " << res.first << " and the pose "
-                                    << res.second.transpose());
-
-  return success;
+inline void
+load_ipopt_cfg(solver_ptr &_solver, ros::NodeHandle &_nh,
+               const std::string &_name, const std::string &_default) {
+  _solver->Options()->SetStringValue(_name, _nh.param(_name, _default));
 }
 
 void
-DposeGoalTolerance::initialize(const std::string& _name, Map* _map) {
+DposeGoalTolerance::initialize(const std::string &_name, Map *_map) {
   // we cannot do anything if the costmap is invalid
   if (!_map) {
     DP_FATAL_LOG("received a nullptr as map");
@@ -382,40 +518,31 @@ DposeGoalTolerance::initialize(const std::string& _name, Map* _map) {
   }
 
   map_ = _map;
-  ros::NodeHandle pnh("~" + _name);
+  ros::NodeHandle nh("~" + _name);
 
-  {
-    // scope since we have different parameters
-    // here we take care of the pose_gradient setup
-    dpose_core::pose_gradient::parameter param;
+  // read the padding parameter and safely cast it to unsigned int
+  const int padding = nh.param("padding", 2);
+  const auto u_padding = static_cast<unsigned int>(std::max(padding, 0));
+  problem_ = new problem(*map_, {u_padding, true});
+  solver_ = IpoptApplicationFactory();
 
-    // get the padding for the footprint.
-    // the padding is unsigned so we take here the abs
-    param.padding = std::abs(pnh.param("padding", 2));
-    param.generate_hessian = false;
+  // configure the solver
+  load_ipopt_cfg(solver_, nh, "tol", 5.);
+  load_ipopt_cfg(solver_, nh, "mu_strategy", "adaptive");
+  load_ipopt_cfg(solver_, nh, "output_file", "/tmp/ipopt.out");
+  load_ipopt_cfg(solver_, nh, "max_iter", 20);
+  load_ipopt_cfg(solver_, nh, "max_cpu_time", .5);
 
-    // setup the pose-gradient
-    const auto footprint =
-        dpose_core::make_footprint(*_map->getLayeredCostmap());
-    grad_ = dpose_core::pose_gradient{footprint, param};
-  }
+  pose_pub_ = nh.advertise<Pose>("filtered", 1);
 
-  {
-    // here we take care of the gradient_decent setup
-    gradient_decent::parameter param;
-    // get the tolerances
-    param.tol = _loadTolerance("tolerance", pnh);
-
-    // get the other parameters. all parameters cannot be negative, so we take
-    // their absolute value
-    param.iter = std::abs(pnh.param("iter", 10));
-    param.step_r = std::abs(pnh.param("step_r", 0.1));
-    param.step_t = std::abs(pnh.param("step_t", 1.));
-    epsilon_ = param.epsilon = pnh.param("epsilon", 0.5);
-
-    // setup the gradient-decent
-    opt_ = gradient_decent{std::move(param)};
-  }
+  // setup the cfg-server
+  cfg_server_.reset(new cfg_server(nh));
+  cfg_server_->setCallback(
+      [&](DposeGoalToleranceConfig &_cfg, uint32_t _level) {
+        param_ = _cfg;
+        // lin is in cells
+        param_.lin_tolerance /= map_->getCostmap()->getResolution();
+      });
 }
 
 }  // namespace dpose_goal_tolerance

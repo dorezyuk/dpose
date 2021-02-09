@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.6.0)
 project(dpose_core)
 
-set(CATKIN_PACKAGES angles costmap_2d geometry_msgs)
+set(CATKIN_PACKAGES costmap_2d geometry_msgs)
 # add_compile_options(-Wpedantic -Wall -Wextra)
 
 # the clang-tidy checks are optional
@@ -61,5 +61,20 @@ if(CATKIN_ENABLE_TESTING)
   target_include_directories(${PROJECT_NAME}_test PUBLIC src)
   if (TARGET ${PROJECT_NAME}_test)
     target_link_libraries(${PROJECT_NAME}_test ${PROJECT_NAME} gtest_main)
+  endif()
+endif()
+
+###############
+## Benchmark ##
+###############
+
+set(${PROJECT_NAME}_BENCHMARK "Enable benchmarking" ON)
+if(${PROJECT_NAME}_BENCHMARK)
+  find_package(benchmark)
+  if(benchmark_FOUND)
+    add_executable(${PROJECT_NAME}_perf perf/dpose_core.cpp)
+    target_link_libraries(${PROJECT_NAME}_perf benchmark::benchmark ${PROJECT_NAME})
+  else()
+    message("benchmark library not found")
   endif()
 endif()

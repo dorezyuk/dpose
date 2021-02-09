@@ -52,69 +52,6 @@ namespace dpose_goal_tolerance {
 
 using namespace dpose_core;
 
-cell_vector
-lethal_cells_within(costmap_2d::Costmap2D &_map,
-                    const rectangle<int> &_bounds) {
-  // enforce that bounds is within costmap
-  rectangle<int> search_box = _bounds.array().max(0).matrix();
-
-  // check if size is zero to prevent underflow
-  if (_map.getSizeInCellsX() == 0 || _map.getSizeInCellsY() == 0)
-    return {};
-
-  // clang-format off
-  search_box.row(0) = search_box.row(0).array().min(_map.getSizeInCellsX() - 1).matrix();
-  search_box.row(1) = search_box.row(1).array().min(_map.getSizeInCellsY() - 1).matrix();
-  // clang-format on
-
-  // first swipe to count the number of elements
-  const auto rays = to_rays(search_box);
-
-  size_t count = 0;
-
-  // lock the costmap
-  boost::unique_lock<boost::recursive_mutex> lock(*_map.getMutex());
-  const auto char_map = _map.getCharMap();
-  for (const auto &ray : rays) {
-    const auto &y = ray.first;
-    // debug-asserts on the indices
-    assert(y >= 0 && "y index cannot be negative");
-    assert(y < _map.getSizeInCellsY() && "y index out of bounds");
-    assert(ray.second.min >= 0 && "x index cannot be negative");
-    assert(ray.second.max <= _map.getSizeInCellsX() && "x index out of bounds");
-
-    const auto ii_end = _map.getIndex(ray.second.max + 1, y);
-    // branchless formulation of "if(char_map[ii] == _value) {++count;}"
-    for (auto ii = _map.getIndex(ray.second.min, y); ii != ii_end; ++ii)
-      count += (char_map[ii] == costmap_2d::LETHAL_OBSTACLE);
-  }
-
-  // resize the final vector
-  cell_vector cells(count);
-
-  // dd is the index of the "destination" (where to write to)
-  auto dd_iter = cells.begin();
-
-  // write the cells
-  for (const auto &ray : rays) {
-    const auto &y = ray.first;
-    // the conversion to x-value from index is x = index - (y * x_size). the
-    // y_offset is here the second part of the equation.
-    const auto y_offset = y * _map.getSizeInCellsX();
-    const auto ii_end = _map.getIndex(ray.second.max + 1, y);
-
-    // as in the first swipe, but now we convert the index to cells
-    for (auto ii = _map.getIndex(ray.second.min, y); ii != ii_end; ++ii) {
-      if (char_map[ii] == costmap_2d::LETHAL_OBSTACLE)
-        *dd_iter++ = {ii - y_offset, y};
-    }
-  }
-
-  assert(dd_iter == cells.end() && "bad index: dd_iter");
-
-  return cells;
-}
-
 pose_regularization::pose_regularization(number _weight_lin,
                                          number _weight_rot) :
     weight_lin_(_weight_lin), weight_rot_(_weight_rot) {

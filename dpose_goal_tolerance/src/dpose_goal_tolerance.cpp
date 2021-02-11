@@ -419,7 +419,7 @@ DposeGoalTolerance::preProcess(Pose &_start, Pose &_goal) {
   }
 
   // publish the filtered pose
-  if(status == Ipopt::Solve_Succeeded){
+  if (status == Ipopt::Solve_Succeeded) {
     pose_pub_.publish(_goal);
     return false;
   }
@@ -469,6 +469,14 @@ DposeGoalTolerance::initialize(const std::string &_name, Map *_map) {
   load_ipopt_cfg(solver_, nh, "output_file", "/tmp/ipopt.out");
   load_ipopt_cfg(solver_, nh, "max_iter", 20);
   load_ipopt_cfg(solver_, nh, "max_cpu_time", .5);
+  // our hessian is mostlikely too noisy to yield good results
+  solver_->Options()->SetStringValue("hessian_approximation", "limited-memory");
+  // #ifndef NDEBUG
+  solver_->Options()->SetStringValue("derivative_test", "second-order");
+  solver_->Options()->SetNumericValue("derivative_test_perturbation", 0.00001);
+  solver_->Options()->SetNumericValue("point_perturbation_radius", 10);
+
+  // #endif
 
   pose_pub_ = nh.advertise<Pose>("filtered", 1);
 

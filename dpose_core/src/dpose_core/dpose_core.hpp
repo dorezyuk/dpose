@@ -53,6 +53,22 @@ to_rectangle(const _T& w, const _T& h) noexcept {
   return box;
 }
 
+/// @brief constructs a rectangle with the given size
+/// @param _min lower corner
+/// @param _max upper corner
+template <typename _T>
+inline rectangle<_T>
+to_rectangle(const Eigen::Matrix<_T, 2, 1> &_min,
+             const Eigen::Matrix<_T, 2, 1> &_max) noexcept {
+  rectangle<_T> box;
+  // clang-format off
+  box << _min.x(), _max.x(), _max.x(), _min.x(), _min.x(),
+         _min.y(), _min.y(), _max.y(), _max.y(), _min.y();
+  // clang-format on
+  return box;
+}
+
+
 /// @brief polygon where first row holds the x, and second row y values.
 using polygon = Eigen::Matrix<int, 2UL, Eigen::Dynamic>;
 

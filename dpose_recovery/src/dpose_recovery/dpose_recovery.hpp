@@ -77,12 +77,14 @@ struct Problem : public Ipopt::TNLP {
     Eigen::Vector2d u_upper;
   };
 
-  Problem(costmap_2d::LayeredCostmap &_lcm, const Parameter &_our_param,
+  Problem(costmap_2d::Costmap2DROS &_lcm, const Parameter &_our_param,
           const pose_gradient::parameter &_param);
 
   inline void
   set_origin(const Eigen::Vector3d &_x0) noexcept {
     x0_ = _x0;
+    cost_best = std::numeric_limits<number>::max();
+
   }
 
   bool
@@ -153,11 +155,11 @@ private:
   pose_gradient pg_;
   Eigen::Vector3d x0_;
   std::vector<Eigen::Vector3d> x_;
+  costmap_2d::Costmap2DROS* map_ = nullptr;
 
   Parameter param_;
 };
 
-// }  // namespace internal
 
 struct DposeRecovery : public nav_core::RecoveryBehavior {
   // way too long...

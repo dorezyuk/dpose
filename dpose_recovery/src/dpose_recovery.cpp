@@ -1,3 +1,4 @@
+#include <dpose_core/dpose_costmap.hpp>
 #include <dpose_recovery/dpose_recovery.hpp>
 
 #include <pluginlib/class_list_macros.hpp>
@@ -9,6 +10,7 @@
 
 #include <cassert>
 #include <iterator>
+#include <limits>
 #include <string>
 
 namespace dpose_recovery {
@@ -18,9 +20,9 @@ little_gauss(size_t _n) noexcept {
   return _n * (_n + 1) / 2;
 }
 
-Problem::Problem(costmap_2d::LayeredCostmap &_lcm, const Parameter &_our_param,
+Problem::Problem(costmap_2d::Costmap2DROS &_cm, const Parameter &_our_param,
                  const pose_gradient::parameter &_param) :
-    pg_(dpose_core::make_footprint(_lcm), _param),
+    pg_(dpose_core::make_footprint(*_cm.getLayeredCostmap()), _param),
     param_(_our_param),
     x_(_our_param.steps),
     R(_our_param.steps),
@@ -31,7 +33,8 @@ Problem::Problem(costmap_2d::LayeredCostmap &_lcm, const Parameter &_our_param,
     H_hat(_our_param.steps),
     C_hat(_our_param.steps),
     D_hat(_our_param.steps),
-    u_best(_our_param.steps) {}
+    u_best(_our_param.steps),
+    map_(&_cm) {}
 
 bool
 Problem::get_nlp_info(index &n, index &m, index &nnz_jac_g, index &nnz_h_lag,
@@ -91,14 +94,60 @@ _create_hat(_Iter _begin, _Iter _end) {
     *next += *_begin;
 }
 
+using namespace dpose_core;
+
+cell_rectangle
+get_bounding_box(index n, const number *u, pose _prev,
+                 const cell_rectangle &_box) {
+  if (!n)
+    throw std::invalid_argument("n cannot be zero");
+
+  pose curr;
+  // create the vectors for the min and max corners
+  Eigen::Vector2d max_corner(std::numeric_limits<double>::lowest(),
+                             std::numeric_limits<double>::lowest());
+  Eigen::Vector2d min_corner(std::numeric_limits<double>::max(),
+                             std::numeric_limits<double>::max());
+  // iterate over the vector of controls
+  for (index ii = 0; ii != n; ii += 2) {
+    // get the current pose
+    curr = diff_drive::step(_prev, u[ii], u[ii + 1]);
+
+    // transform the box into the pose
+    const Eigen::Translation2d trans(curr.x(), curr.y());
+    const Eigen::Rotation2Dd rot(curr.z());
+    const Eigen::Isometry2d tf = trans * rot;
+    const rectangle<double> curr_box = tf * _box.cast<double>();
+
+    // update the corners
+    Eigen::Vector2d max = curr_box.rowwise().maxCoeff();
+    Eigen::Vector2d min = curr_box.rowwise().minCoeff();
+    max_corner = max_corner.array().max(max.array());
+    min_corner = min_corner.array().min(min.array());
+
+    _prev = curr;
+  }
+
+  return to_rectangle(min_corner, max_corner).cast<int>();
+}
+
 void
 Problem::on_new_u(index n, const number *u) {
   using state_t = Eigen::Vector3d;
+  // we will throw otherwise
+  if (!n)
+    return;
 
   // define the states
   state_t prev = x0_;
   state_t curr;
 
+  // get the bounding gox of the entire motion
+  const rectangle<int> box =
+      get_bounding_box(n, u, x0_, pg_.get_data().core.get_box());
+
+  // get the lethal cells
+  const auto lethal_cells = lethal_cells_within(*map_->getCostmap(), box);
   // reset the cost
   cost = 0;
 
@@ -113,8 +162,11 @@ Problem::on_new_u(index n, const number *u) {
     curr = diff_drive::step(prev, u[jj], u[jj + 1]);
 
     // find J_ii and H_ii. We abuse the J_hat and H_hat as dummies.
-    // cost += pg_.get_cost(curr, &J_hat.at(ii), &H_hat.at(ii));
+    cost += pg_.get_cost(curr, lethal_cells.begin(), lethal_cells.end(),
+                         &J_hat.at(ii), &H_hat.at(ii));
 
+    J_hat.at(ii) *= -1;
+    H_hat.at(ii) *= -1;
     prev = curr;
   }
   if (cost < cost_best) {
@@ -339,13 +391,15 @@ DposeRecovery::initialize(std::string _name, tf2_ros::Buffer *_tf,
   param.steps = nh.param("steps", 10);
   param.dim_u = 2;
 
-  param.u_lower = {-2, -0.2};
-  param.u_upper = {2, 0.2};
+  const auto lin_vel = nh.param("lin_vel", 0.1) / map_->getCostmap()->getResolution();
+  const auto rot_vel = nh.param("rot_vel", 0.1);
+  param.u_lower = {-lin_vel, -rot_vel};
+  param.u_upper = {lin_vel, rot_vel};
   dpose_core::pose_gradient::parameter param2;
   param2.generate_hessian = true;
   param2.padding = nh.param("padding", 5);
 
-  problem_ = new Problem(*map_->getLayeredCostmap(), param, param2);
+  problem_ = new Problem(*map_, param, param2);
   solver_ = IpoptApplicationFactory();
 
   load_ipopt(solver_, nh, "tol", 5.);
@@ -396,11 +450,17 @@ DposeRecovery::runBehavior() {
     auto status = solver_->OptimizeTNLP(problem_);
 
     const auto &u = problem->get_u();
+
+    // for(const auto& uu : u)
+    //   std::cout << uu.transpose() << std::endl;
+
     std::vector<Eigen::Vector3d> x(u.size() + 1);
 
     x.front() = pose;
-    for (size_t ii = 0; ii != u.size(); ++ii)
+    for (size_t ii = 0; ii != u.size(); ++ii){
       x.at(ii + 1) = diff_drive::step(x.at(ii), u.at(ii)(0), u.at(ii)(1));
+      // std::cout << x.at(ii + 1).transpose() << std::endl;
+    }
 
     // convert to array
     geometry_msgs::PoseArray pose_array;
@@ -413,6 +473,7 @@ DposeRecovery::runBehavior() {
       pose_array.poses.at(ii).position.y = x.at(ii)(1) * res + origin_y;
       q.setRPY(0, 0, x.at(ii).z());
       pose_array.poses.at(ii).orientation = tf2::toMsg(q);
+      // std::cout << pose_array.poses.at(ii) << std::endl;
     }
 
     pose_array_.publish(pose_array);
@@ -421,12 +482,14 @@ DposeRecovery::runBehavior() {
     geometry_msgs::Twist cmd_vel;
     cmd_vel.linear.x = u.front().x() * res;
     cmd_vel.angular.z = u.front().y();
-    cmd_vel_.publish(cmd_vel);
+    for(size_t ii = 0; ii != 10; ++ii){
+      cmd_vel_.publish(cmd_vel);
+      spin_rate.sleep();
+    }
 
     solver_->Options()->SetStringValue("warm_start_init_point", "yes");
-    if (problem->get_cost() < 1)
-      break;
-    spin_rate.sleep();
+    // if (problem->get_cost() < 1)
+    //   break;
   }
 }
 

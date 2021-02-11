@@ -53,11 +53,11 @@ TEST_P(rotation, x_grad) {
 
       // compute the error
       const auto diff = (right_cost - left_cost) / 2.;
-      const auto error = std::abs(diff - J.x());
+      const auto error = diff - J.x();
 
       // we expect that we are "good enough". the value is rather high, since
       // there are still some discretesation issues.
-      EXPECT_LE(error, 0.1) << xx << ", " << yy;
+      EXPECT_LE(std::abs(error), 0.1) << xx << ", " << yy;
       mae += std::abs(error / (diff ? diff : 1));
     }
   }
@@ -81,9 +81,9 @@ TEST_P(rotation, y_grad) {
                                nullptr, nullptr);
 
       const auto diff = (upper_cost - lower_cost) / 2.;
-      const auto error = std::abs(diff - J.y());
+      const auto error = diff - J.y();
 
-      EXPECT_LE(error, 0.1) << xx << ", " << yy;
+      EXPECT_LE(std::abs(error), 0.1) << xx << ", " << yy;
       mae += std::abs(error / (diff ? diff : 1));
     }
   }

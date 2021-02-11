@@ -448,7 +448,7 @@ pose_gradient::get_cost(const pose& _se2, cell_vector::const_iterator _begin,
     H(0, 1) = H(1, 0);         // x y
 
     // apply the rotation
-    *_H = rot.transpose() * H * rot;
+    *_H = rot * H * rot.transpose();
   }
 
   return sum;

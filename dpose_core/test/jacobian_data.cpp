@@ -28,7 +28,7 @@ struct rotation : public TestWithParam<double> {
   pose_gradient::pose se2;
   pose_gradient::jacobian J;
 
-  double mse = 0;  ///< mean squared error
+  double mae = 0;  ///< mean abs error
 
   rotation() : se2(0, 0, GetParam()), pg(make_ship(), {10, false}) {}
 };
@@ -54,16 +54,15 @@ TEST_P(rotation, x_grad) {
       // compute the error
       const auto diff = (right_cost - left_cost) / 2.;
       const auto error = std::abs(diff - J.x());
-      const auto rel = error / (diff ? diff : 1);
 
       // we expect that we are "good enough". the value is rather high, since
       // there are still some discretesation issues.
       EXPECT_LE(error, 0.1) << xx << ", " << yy;
-      mse += std::abs(rel);
+      mae += std::abs(error / (diff ? diff : 1));
     }
   }
-  mse /= (19 * 20);
-  EXPECT_LE(mse, 0.06);
+  mae /= (19 * 20);
+  EXPECT_LE(mae, 0.06);
 }
 
 // copy and pasted from above - with the  y-values now under test
@@ -83,14 +82,13 @@ TEST_P(rotation, y_grad) {
 
       const auto diff = (upper_cost - lower_cost) / 2.;
       const auto error = std::abs(diff - J.y());
-      const auto rel = error / (diff ? diff : 1);
 
       EXPECT_LE(error, 0.1) << xx << ", " << yy;
-      mse += std::abs(rel);
+      mae += std::abs(error / (diff ? diff : 1));
     }
   }
-  mse /= (19 * 20);
-  EXPECT_LE(mse, 0.05);
+  mae /= (19 * 20);
+  EXPECT_LE(mae, 0.05);
 }
 
 }  // namespace

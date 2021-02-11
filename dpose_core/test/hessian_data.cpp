@@ -29,7 +29,7 @@ struct rotated_hessian : public TestWithParam<double> {
   pose_gradient::jacobian J_left, J_right;
   pose_gradient::hessian H;
 
-  double mse = 0;  ///< mean squared error
+  double mae = 0;  ///< mean abs error
 
   rotated_hessian() : se2(0, 0, GetParam()), pg(make_arrow(), {2, true}) {}
 };
@@ -37,7 +37,6 @@ struct rotated_hessian : public TestWithParam<double> {
 INSTANTIATE_TEST_SUITE_P(/**/, rotated_hessian, Range(0., 1.5, 0.1));
 
 TEST_P(rotated_hessian, xx_grad) {
-  double mae = 0;
   for (size_t xx = 1; xx != 20; ++xx) {
     for (size_t yy = 0; yy != 20; ++yy) {
       // setup the cell-vector with the query
@@ -57,16 +56,14 @@ TEST_P(rotated_hessian, xx_grad) {
       const auto error = std::abs(diff - H(0, 0));
 
       EXPECT_LE(error, 0.4) << xx << ", " << yy;
-      mse += std::pow(error, 2);
-      mae = std::max(mae, std::abs(error));
+      mae += std::abs(error / (diff ? diff : 1));
     }
   }
-  mse /= (19 * 20);
-  EXPECT_LE(mse, 0.1);
+  mae /= (19 * 20);
+  EXPECT_LE(mae, 0.41);
 }
 
 TEST_P(rotated_hessian, yy_grad) {
-  double mae = 0;
   for (size_t xx = 0; xx != 20; ++xx) {
     for (size_t yy = 1; yy != 20; ++yy) {
       cell_vector center_cells{cell(xx, yy)};
@@ -83,12 +80,11 @@ TEST_P(rotated_hessian, yy_grad) {
       const auto error = std::abs(diff - H(1, 1));
 
       EXPECT_LE(error, 0.4) << xx << ", " << yy;
-      mse += std::pow(error, 2);
-      mae = std::max(mae, std::abs(error));
+      mae += std::abs(error / (diff ? diff : 1));
     }
   }
-  mse /= (19 * 20);
-  EXPECT_LE(mse, 0.1);
+  mae /= (19 * 20);
+  EXPECT_LE(mae, 0.41);
 }
 
 }  // namespace

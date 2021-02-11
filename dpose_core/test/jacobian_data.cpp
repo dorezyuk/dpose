@@ -30,7 +30,7 @@ struct rotation : public TestWithParam<double> {
 
   double mse = 0;  ///< mean squared error
 
-  rotation() : se2(0, 0, GetParam()), pg(make_ship(), {3, false}) {}
+  rotation() : se2(0, 0, GetParam()), pg(make_ship(), {10, false}) {}
 };
 
 INSTANTIATE_TEST_SUITE_P(/**/, rotation, Range(0., 1.5, 0.1));
@@ -54,15 +54,16 @@ TEST_P(rotation, x_grad) {
       // compute the error
       const auto diff = (right_cost - left_cost) / 2.;
       const auto error = std::abs(diff - J.x());
+      const auto rel = error / (diff ? diff : 1);
 
       // we expect that we are "good enough". the value is rather high, since
       // there are still some discretesation issues.
       EXPECT_LE(error, 0.1) << xx << ", " << yy;
-      mse += std::pow(error, 2);
+      mse += std::abs(rel);
     }
   }
   mse /= (19 * 20);
-  EXPECT_LE(mse, 0.1);
+  EXPECT_LE(mse, 0.06);
 }
 
 // copy and pasted from above - with the  y-values now under test
@@ -82,13 +83,14 @@ TEST_P(rotation, y_grad) {
 
       const auto diff = (upper_cost - lower_cost) / 2.;
       const auto error = std::abs(diff - J.y());
+      const auto rel = error / (diff ? diff : 1);
 
       EXPECT_LE(error, 0.1) << xx << ", " << yy;
-      mse += std::pow(error, 2);
+      mse += std::abs(rel);
     }
   }
   mse /= (19 * 20);
-  EXPECT_LE(mse, 0.1);
+  EXPECT_LE(mse, 0.05);
 }
 
 }  // namespace

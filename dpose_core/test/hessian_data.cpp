@@ -54,9 +54,9 @@ TEST_P(rotated_hessian, xx_grad) {
 
       // compute the error
       const auto diff = (J_right.x() - J_left.x()) / 2.;
-      const auto error = diff - H(0, 0);
+      const auto error = std::abs(diff - H(0, 0));
 
-      EXPECT_LE(error, 0.5) << xx << ", " << yy;
+      EXPECT_LE(error, 0.4) << xx << ", " << yy;
       mse += std::pow(error, 2);
       mae = std::max(mae, std::abs(error));
     }
@@ -80,9 +80,9 @@ TEST_P(rotated_hessian, yy_grad) {
                   nullptr);
 
       const auto diff = (J_right.y() - J_left.y()) / 2.;
-      const auto error = diff - H(1, 1);
+      const auto error = std::abs(diff - H(1, 1));
 
-      EXPECT_LE(error, 0.5) << xx << ", " << yy;
+      EXPECT_LE(error, 0.4) << xx << ", " << yy;
       mse += std::pow(error, 2);
       mae = std::max(mae, std::abs(error));
     }

@@ -469,14 +469,15 @@ DposeGoalTolerance::initialize(const std::string &_name, Map *_map) {
   load_ipopt_cfg(solver_, nh, "output_file", "/tmp/ipopt.out");
   load_ipopt_cfg(solver_, nh, "max_iter", 20);
   load_ipopt_cfg(solver_, nh, "max_cpu_time", .5);
-  // our hessian is mostlikely too noisy to yield good results
+  // the hessian from dpose is very noisy for most footprints and its better not
+  // to use it.
   solver_->Options()->SetStringValue("hessian_approximation", "limited-memory");
-  // #ifndef NDEBUG
-  solver_->Options()->SetStringValue("derivative_test", "second-order");
+// print the derivative test if running in debug
+#ifndef NDEBUG
+  solver_->Options()->SetStringValue("derivative_test", "first-order");
   solver_->Options()->SetNumericValue("derivative_test_perturbation", 0.00001);
   solver_->Options()->SetNumericValue("point_perturbation_radius", 10);
-
-  // #endif
+#endif
 
   pose_pub_ = nh.advertise<Pose>("filtered", 1);
 

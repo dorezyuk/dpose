@@ -28,67 +28,50 @@ struct rotated_hessian : public TestWithParam<double> {
   pose_gradient::pose se2;
   pose_gradient::jacobian J_left, J_right;
   pose_gradient::hessian H;
+  cell_vector cells;
 
-  double mse = 0;  ///< mean squared error
+  double mae = 0;  ///< mean abs error
 
-  rotated_hessian() : se2(0, 0, GetParam()), pg(make_arrow(), {2, true}) {}
+  rotated_hessian() : se2(0, 0, GetParam()), pg(make_arrow(), {2, true}) {
+    cells.reserve(20 * 20);
+    for (size_t xx = 0; xx != 20; ++xx)
+      for (size_t yy = 0; yy != 20; ++yy)
+        cells.emplace_back(xx, yy);
+  }
 };
 
 INSTANTIATE_TEST_SUITE_P(/**/, rotated_hessian, Range(0., 1.5, 0.1));
 
 TEST_P(rotated_hessian, xx_grad) {
-  double mae = 0;
-  for (size_t xx = 1; xx != 20; ++xx) {
-    for (size_t yy = 0; yy != 20; ++yy) {
-      // setup the cell-vector with the query
-      cell_vector center_cells{cell(xx, yy)};
-      cell_vector left_cells{cell(xx - 1, yy)};
-      cell_vector right_cells{cell{xx + 1, yy}};
+  pose_gradient::pose offset(0.01, 0, 0);
+  pg.get_cost(se2, cells.cbegin(), cells.cend(), nullptr, &H);
 
-      // query the data
-      pg.get_cost(se2, center_cells.cbegin(), center_cells.cend(), nullptr, &H);
-      pg.get_cost(se2, left_cells.cbegin(), left_cells.cend(), &J_left,
-                  nullptr);
-      pg.get_cost(se2, right_cells.cbegin(), right_cells.cend(), &J_right,
-                  nullptr);
+  // get the Jacobians left and right of the pose
+  pg.get_cost(se2 - offset, cells.cbegin(), cells.cend(), &J_left, nullptr);
+  pg.get_cost(se2 + offset, cells.cbegin(), cells.cend(), &J_right, nullptr);
 
-      // compute the error
-      const auto diff = (J_right.x() - J_left.x()) / 2.;
-      const auto error = diff - H(0, 0);
+  // compute the relative error
+  const auto diff = (J_left.x() - J_right.x()) / 0.02;
+  const auto error = std::abs((diff - H(0, 0)) / (diff ? diff : 1.));
 
-      EXPECT_LE(error, 0.5) << xx << ", " << yy;
-      mse += std::pow(error, 2);
-      mae = std::max(mae, std::abs(error));
-    }
-  }
-  mse /= (19 * 20);
-  EXPECT_LE(mse, 0.1);
+  // we expect that we are "good enough"
+  EXPECT_LE(error, 0.07) << ": " << diff << " vs " << H(0, 0);
 }
 
 TEST_P(rotated_hessian, yy_grad) {
-  double mae = 0;
-  for (size_t xx = 0; xx != 20; ++xx) {
-    for (size_t yy = 1; yy != 20; ++yy) {
-      cell_vector center_cells{cell(xx, yy)};
-      cell_vector left_cells{cell(xx, yy - 1)};
-      cell_vector right_cells{cell{xx, yy + 1}};
+  pose_gradient::pose offset(0, 0.01, 0);
+  pg.get_cost(se2, cells.cbegin(), cells.cend(), nullptr, &H);
 
-      pg.get_cost(se2, center_cells.cbegin(), center_cells.cend(), nullptr, &H);
-      pg.get_cost(se2, left_cells.cbegin(), left_cells.cend(), &J_left,
-                  nullptr);
-      pg.get_cost(se2, right_cells.cbegin(), right_cells.cend(), &J_right,
-                  nullptr);
+  // get the Jacobians lower and upper to the pose
+  pg.get_cost(se2 - offset, cells.cbegin(), cells.cend(), &J_left, nullptr);
+  pg.get_cost(se2 + offset, cells.cbegin(), cells.cend(), &J_right, nullptr);
 
-      const auto diff = (J_right.y() - J_left.y()) / 2.;
-      const auto error = diff - H(1, 1);
+  // compute the relative error
+  const auto diff = (J_left.y() - J_right.y()) / 0.02;
+  const auto error = std::abs((diff - H(1, 1)) / (diff ? diff : 1.));
 
-      EXPECT_LE(error, 0.5) << xx << ", " << yy;
-      mse += std::pow(error, 2);
-      mae = std::max(mae, std::abs(error));
-    }
-  }
-  mse /= (19 * 20);
-  EXPECT_LE(mse, 0.1);
+  // we expect that we are "good enough"
+  EXPECT_LE(error, 0.12) << ": " << diff << " vs " << H(1, 1);
 }
 
 }  // namespace

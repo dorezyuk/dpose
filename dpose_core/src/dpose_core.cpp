@@ -79,38 +79,37 @@ _get_cost(const polygon& _fp, size_t& _padding) {
 
   // get the euclidean distance transform
   cv::Mat edt(bb_size, cv::DataType<float>::type);
-  cv::distanceTransform(image, edt, cv::DIST_L2, cv::DIST_MASK_PRECISE);
+  cv::distanceTransform(image, edt, cv::DIST_L2, cv::DIST_MASK_PRECISE,
+                        cv::DataType<float>::type);
 
   assert(cv::imwrite("/tmp/edt.jpg", edt));
   assert(cv::countNonZero(edt) > 0 && "distance transform failed");
 
-  // we now apply "smoothing" on the edges of the polygon. this means, we add
-  // some gaussian blur beyond the real polygon - this helps later on in the
-  // optimization.
+  // we now tweak the costs out side of the polygon (outer), such that we have a
+  // nice cost-function.
 
   // get the mask of the polygon defined by cells
-  image.setTo(cv::Scalar(0));
+  image.setTo(cv::Scalar(255));
   std::vector<_cv_cell_vector> cells({_cells});
-  cv::fillPoly(image, cells, cv::Scalar(255));
+  cv::fillPoly(image, cells, cv::Scalar(0));
 
   assert(cv::countNonZero(image) > 0 && "filling of the mask failed");
 
-  constexpr float offset = 1;
-  const auto kernel_size = _padding * 2 + 1;
+  // scale the outer part down, since in the context of obstacle avoidance, the
+  // outer part is less bad...
+  cv::Mat outer(bb_size, cv::DataType<float>::type, cv::Scalar(0));
+  cv::copyTo(edt, outer, image);
 
-  // paint a blurry polygon
-  cv::Mat smoothen(bb_size, cv::DataType<float>::type, cv::Scalar(0));
-  cv::polylines(smoothen, cells, true, cv::Scalar(offset));
-  cv::GaussianBlur(smoothen, smoothen, cv::Size(kernel_size, kernel_size), 0);
-
-  // since the border of the polygon (which has within the edt the value zero)
-  // has now the value offset, we need to "lift" all other costs by the offset.
-  edt += offset;
+  outer *= -0.01;
+  double min;
+  cv::minMaxIdx(outer, &min);
 
   // copy the distance transform within the mask into final image
-  cv::copyTo(edt, smoothen, image);
+  cv::copyTo(outer, edt, image);
+  edt -= min;
+  cv::GaussianBlur(edt, edt, cv::Size(3, 3), 0);
 
-  return smoothen;
+  return edt;
 }
 
 /// @brief helper to prune repetitions from _get_circular_cells
@@ -285,16 +284,16 @@ cost_data::cost_data(const polygon& _footprint, size_t _padding) {
   // get the cost image
   cost = _get_cost(footprint, _padding);
   // safe the image if we are running in debug mode (and scale the images)
-  assert(cv::imwrite("/tmp/cost.jpg", cost * 10));
+  assert(cv::imwrite("/tmp/cost.jpg", cost * 100));
 
   // create the bounding box around the original footprint
   box = _to_rectangle(cost).colwise() - center;
 }
 
 jacobian_data::jacobian_data(const cost_data& _d) {
-  const auto scale = 1. / 128.;
-  cv::Sobel(_d.cost, d_array.at(0), cv::DataType<float>::type, 1, 0, 5, scale);
-  cv::Sobel(_d.cost, d_array.at(1), cv::DataType<float>::type, 0, 1, 5, scale);
+  const double scale = 1. / 32.;
+  cv::Scharr(_d.cost, d_array.at(0), cv::DataType<float>::type, 1, 0, scale);
+  cv::Scharr(_d.cost, d_array.at(1), cv::DataType<float>::type, 0, 1, scale);
   d_array.at(2) = _angular_derivative(_d.cost, _d.center);
 
   // safe the jacobians if compiled in debug mode
@@ -304,11 +303,11 @@ jacobian_data::jacobian_data(const cost_data& _d) {
 }
 
 hessian_data::hessian_data(const cost_data& _cost, const jacobian_data& _J) {
-  const auto scale = 1. / 256.;
+  const auto scale = 1. / 32.;
   // second derivative to x
-  cv::Sobel(_J.at(0), d_array.at(0), cv::DataType<float>::type, 1, 0, 5, scale);
-  cv::Sobel(_J.at(1), d_array.at(1), cv::DataType<float>::type, 1, 0, 5, scale);
-  cv::Sobel(_J.at(2), d_array.at(2), cv::DataType<float>::type, 1, 0, 5, scale);
+  cv::Scharr(_J.at(0), d_array.at(0), cv::DataType<float>::type, 1, 0, scale);
+  cv::Scharr(_J.at(1), d_array.at(1), cv::DataType<float>::type, 1, 0, scale);
+  cv::Scharr(_J.at(2), d_array.at(2), cv::DataType<float>::type, 1, 0, scale);
 
   // safe the hessians if compiled in debug mode
   assert(cv::imwrite("/tmp/d_x_x.jpg", d_array.at(0) * 10 + 100));
@@ -316,8 +315,8 @@ hessian_data::hessian_data(const cost_data& _cost, const jacobian_data& _J) {
   assert(cv::imwrite("/tmp/d_theta_x.jpg", d_array.at(2) * 10 + 100));
 
   // second derivative to y
-  cv::Sobel(_J.at(1), d_array.at(3), cv::DataType<float>::type, 0, 1, 5, scale);
-  cv::Sobel(_J.at(2), d_array.at(4), cv::DataType<float>::type, 0, 1, 5, scale);
+  cv::Scharr(_J.at(1), d_array.at(3), cv::DataType<float>::type, 0, 1, scale);
+  cv::Scharr(_J.at(2), d_array.at(4), cv::DataType<float>::type, 0, 1, scale);
 
   // safe the hessians if compiled in debug mode
   assert(cv::imwrite("/tmp/d_y_y.jpg", d_array.at(3) * 10 + 100));
@@ -450,7 +449,7 @@ pose_gradient::get_cost(const pose& _se2, cell_vector::const_iterator _begin,
     H(0, 1) = H(1, 0);         // x y
 
     // apply the rotation
-    *_H = rot.transpose() * H * rot;
+    *_H = rot * H * rot.transpose();
   }
 
   return sum;

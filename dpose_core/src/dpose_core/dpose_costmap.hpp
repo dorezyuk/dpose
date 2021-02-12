@@ -70,11 +70,19 @@ struct interval {
 
 using cell_interval = interval<size_t>;
 using cell_rays = std::unordered_map<int, cell_interval>;
+using cell_rectangle = rectangle<int>;
 
 /// @brief constructs intervals for every y value from _rect
 /// @param _rect the rectangle
 cell_rays
-to_rays(const rectangle<int>& _rect) noexcept;
+to_rays(const cell_rectangle& _rect) noexcept;
+
+/// @brief returns a vector with lethal cells within the box
+/// @param _map the costmap
+/// @param _bounds box in cell-space defining the ROI
+cell_vector
+lethal_cells_within(costmap_2d::Costmap2D &_map,
+                    const cell_rectangle &_bounds);
 
 }  // namespace dpose_core
 

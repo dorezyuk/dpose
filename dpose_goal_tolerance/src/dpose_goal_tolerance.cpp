@@ -52,69 +52,6 @@ namespace dpose_goal_tolerance {
 
 using namespace dpose_core;
 
-cell_vector
-lethal_cells_within(costmap_2d::Costmap2D &_map,
-                    const rectangle<int> &_bounds) {
-  // enforce that bounds is within costmap
-  rectangle<int> search_box = _bounds.array().max(0).matrix();
-
-  // check if size is zero to prevent underflow
-  if (_map.getSizeInCellsX() == 0 || _map.getSizeInCellsY() == 0)
-    return {};
-
-  // clang-format off
-  search_box.row(0) = search_box.row(0).array().min(_map.getSizeInCellsX() - 1).matrix();
-  search_box.row(1) = search_box.row(1).array().min(_map.getSizeInCellsY() - 1).matrix();
-  // clang-format on
-
-  // first swipe to count the number of elements
-  const auto rays = to_rays(search_box);
-
-  size_t count = 0;
-
-  // lock the costmap
-  boost::unique_lock<boost::recursive_mutex> lock(*_map.getMutex());
-  const auto char_map = _map.getCharMap();
-  for (const auto &ray : rays) {
-    const auto &y = ray.first;
-    // debug-asserts on the indices
-    assert(y >= 0 && "y index cannot be negative");
-    assert(y < _map.getSizeInCellsY() && "y index out of bounds");
-    assert(ray.second.min >= 0 && "x index cannot be negative");
-    assert(ray.second.max <= _map.getSizeInCellsX() && "x index out of bounds");
-
-    const auto ii_end = _map.getIndex(ray.second.max + 1, y);
-    // branchless formulation of "if(char_map[ii] == _value) {++count;}"
-    for (auto ii = _map.getIndex(ray.second.min, y); ii != ii_end; ++ii)
-      count += (char_map[ii] == costmap_2d::LETHAL_OBSTACLE);
-  }
-
-  // resize the final vector
-  cell_vector cells(count);
-
-  // dd is the index of the "destination" (where to write to)
-  auto dd_iter = cells.begin();
-
-  // write the cells
-  for (const auto &ray : rays) {
-    const auto &y = ray.first;
-    // the conversion to x-value from index is x = index - (y * x_size). the
-    // y_offset is here the second part of the equation.
-    const auto y_offset = y * _map.getSizeInCellsX();
-    const auto ii_end = _map.getIndex(ray.second.max + 1, y);
-
-    // as in the first swipe, but now we convert the index to cells
-    for (auto ii = _map.getIndex(ray.second.min, y); ii != ii_end; ++ii) {
-      if (char_map[ii] == costmap_2d::LETHAL_OBSTACLE)
-        *dd_iter++ = {ii - y_offset, y};
-    }
-  }
-
-  assert(dd_iter == cells.end() && "bad index: dd_iter");
-
-  return cells;
-}
-
 pose_regularization::pose_regularization(number _weight_lin,
                                          number _weight_rot) :
     weight_lin_(_weight_lin), weight_rot_(_weight_rot) {
@@ -157,7 +94,9 @@ pose_regularization::get_cost(const pose &_pose) noexcept {
 }
 
 problem::problem(costmap &_map, const pose_gradient::parameter &_param) :
-    costmap_(&_map), pg_(make_footprint(*_map.getLayeredCostmap()), _param) {}
+    costmap_(&_map),
+    pg_(make_footprint(*_map.getLayeredCostmap()), _param),
+    compute_hessian_(_param.generate_hessian) {}
 
 void
 problem::on_new_x(index _n, const number *_x) {
@@ -165,18 +104,33 @@ problem::on_new_x(index _n, const number *_x) {
   const pose offset(_x[0], _x[1], _x[2]);
   const pose p = offset + pose_;
 
-  // query the data
-  cost_ = pg_.get_cost(p, lethal_cells_.begin(), lethal_cells_.end(), &J_, &H_);
-  // flip the signs
-  J_ *= -1;
-  H_ *= -1;
-
+  // reset the cost
+  cost_ = 0;
   // apply the regularization for start and goal (if defined)
-  for (auto &reg : regs_) {
+  for (auto &reg : regs_)
     cost_ += reg.get_cost(p);
-    J_ += reg.get_jacobian();
-    H_ += reg.get_hessian();
+
+  // query the data
+  if (compute_hessian_) {
+    // the case where we use the hessian
+    cost_ =
+        pg_.get_cost(p, lethal_cells_.begin(), lethal_cells_.end(), &J_, &H_);
+
+    // assemble the hessian: flip the sign and add the hessians from the
+    // constraints.
+    H_ *= -1;
+    for (auto &reg : regs_)
+      H_ += reg.get_hessian();
   }
+  else
+    cost_ = pg_.get_cost(p, lethal_cells_.begin(), lethal_cells_.end(), &J_,
+                         nullptr);
+
+  // assemble the jacobian: flip the signs and add the jacobians from the
+  // constraints.
+  J_ *= -1;
+  for (auto &reg : regs_)
+    J_ += reg.get_jacobian();
 }
 
 void
@@ -225,9 +179,9 @@ problem::init(const pose &_start, const pose &_goal,
     // "goal".
     pose start = _start;
 
-    // if the distance between _start and _goal is bigger then the tolerance, we
-    // can never reach "zero" costs. we hence place a fake start pose at the
-    // goal-tolerance distance from _goal.
+    // if the distance between _start and _goal is bigger then the tolerance,
+    // we can never reach "zero" costs. we hence place a fake start pose at
+    // the goal-tolerance distance from _goal.
     pose diff = _start - _goal;
     diff.z() = angles::normalize_angle(diff.z());
 
@@ -482,7 +436,7 @@ DposeGoalTolerance::preProcess(Pose &_start, Pose &_goal) {
   }
 
   // publish the filtered pose
-  if(status == Ipopt::Solve_Succeeded){
+  if (status == Ipopt::Solve_Succeeded) {
     pose_pub_.publish(_goal);
     return false;
   }
@@ -522,8 +476,15 @@ DposeGoalTolerance::initialize(const std::string &_name, Map *_map) {
 
   // read the padding parameter and safely cast it to unsigned int
   const int padding = nh.param("padding", 2);
-  const auto u_padding = static_cast<unsigned int>(std::max(padding, 0));
-  problem_ = new problem(*map_, {u_padding, true});
+  pose_gradient::parameter param;
+  param.padding = static_cast<unsigned int>(std::max(padding, 0));
+  // the hessian from dpose is very noisy for most footprints and its better
+  // not to use it.
+  param.generate_hessian = nh.param("use_hessian", false);
+  if (param.generate_hessian)
+    DP_WARN_LOG("Hessian from dpose-core is very noisy");
+
+  problem_ = new problem(*map_, param);
   solver_ = IpoptApplicationFactory();
 
   // configure the solver
@@ -532,6 +493,18 @@ DposeGoalTolerance::initialize(const std::string &_name, Map *_map) {
   load_ipopt_cfg(solver_, nh, "output_file", "/tmp/ipopt.out");
   load_ipopt_cfg(solver_, nh, "max_iter", 20);
   load_ipopt_cfg(solver_, nh, "max_cpu_time", .5);
+
+  // tell ipopt to use quasi-newtow method if we don't use the Hessian from
+  // dpose.
+  if (!param.generate_hessian)
+    solver_->Options()->SetStringValue("hessian_approximation",
+                                       "limited-memory");
+// print the derivative test if running in debug
+#ifndef NDEBUG
+  solver_->Options()->SetStringValue("derivative_test", "first-order");
+  solver_->Options()->SetNumericValue("derivative_test_perturbation", 0.00001);
+  solver_->Options()->SetNumericValue("point_perturbation_radius", 10);
+#endif
 
   pose_pub_ = nh.advertise<Pose>("filtered", 1);
 

@@ -27,67 +27,54 @@ struct rotation : public TestWithParam<double> {
   pose_gradient pg;
   pose_gradient::pose se2;
   pose_gradient::jacobian J;
+  cell_vector cells;
 
-  double mse = 0;  ///< mean squared error
-  double left_cost, right_cost;
-
-  rotation() : se2(0, 0, GetParam()), pg(make_ship(), {3, false}) {}
+  rotation() : se2(0, 0, GetParam()), pg(make_ship(), {10, false}) {
+    // build the obstacle vector
+    cells.reserve(20 * 20);
+    for (size_t xx = 0; xx != 20; ++xx)
+      for (size_t yy = 0; yy != 20; ++yy)
+        cells.emplace_back(xx, yy);
+  }
 };
 
 INSTANTIATE_TEST_SUITE_P(/**/, rotation, Range(0., 1.5, 0.1));
 
 TEST_P(rotation, x_grad) {
-  for (size_t xx = 1; xx != 20; ++xx) {
-    for (size_t yy = 0; yy != 20; ++yy) {
-      // setup the cell-vector with the query
-      cell_vector center_cells{cell(xx, yy)};
-      cell_vector left_cells{cell(xx - 1, yy)};
-      cell_vector right_cells{cell{xx + 1, yy}};
+  pose_gradient::pose offset(0.01, 0, 0);
+  pg.get_cost(se2, cells.cbegin(), cells.cend(), &J, nullptr);
 
-      // query the data
-      pg.get_cost(se2, center_cells.cbegin(), center_cells.cend(), &J, nullptr);
-      left_cost = pg.get_cost(se2, left_cells.cbegin(), left_cells.cend(),
-                              nullptr, nullptr);
-      right_cost = pg.get_cost(se2, right_cells.cbegin(), right_cells.cend(),
-                               nullptr, nullptr);
+  // get the costs left and right of the pose
+  const auto left_cost =
+      pg.get_cost(se2 - offset, cells.cbegin(), cells.cend(), nullptr, nullptr);
+  const auto right_cost =
+      pg.get_cost(se2 + offset, cells.cbegin(), cells.cend(), nullptr, nullptr);
 
-      // compute the error
-      const auto diff = (right_cost - left_cost) / 2.;
-      const auto error = diff - J.x();
+  // compute the relative error
+  const auto diff = (left_cost - right_cost) / 0.02;
+  const auto error = std::abs((diff - J.x()) / (diff ? diff : 1.));
 
-      // we expect that we are "good enough". the value is rather high, since
-      // there are still some discretesation issues.
-      EXPECT_LE(error, 0.5) << xx << ", " << yy;
-      mse += std::pow(error, 2);
-    }
-  }
-  mse /= (19 * 20);
-  EXPECT_LE(mse, 0.1);
+  // we expect that we are "good enough"
+  EXPECT_LE(error, 0.02) << ": " << diff << " vs " << J.x();
 }
 
 // copy and pasted from above - with the  y-values now under test
 TEST_P(rotation, y_grad) {
-  for (size_t xx = 0; xx != 20; ++xx) {
-    for (size_t yy = 1; yy != 20; ++yy) {
-      cell_vector center_cells{cell(xx, yy)};
-      cell_vector left_cells{cell(xx, yy - 1)};
-      cell_vector right_cells{cell{xx, yy + 1}};
+  pose_gradient::pose offset(0., 0.01, 0);
+  pg.get_cost(se2, cells.cbegin(), cells.cend(), &J, nullptr);
 
-      pg.get_cost(se2, center_cells.cbegin(), center_cells.cend(), &J, nullptr);
-      left_cost = pg.get_cost(se2, left_cells.cbegin(), left_cells.cend(),
-                              nullptr, nullptr);
-      right_cost = pg.get_cost(se2, right_cells.cbegin(), right_cells.cend(),
-                               nullptr, nullptr);
+  // get the costs left and right of the pose
+  const auto lower_cost =
+      pg.get_cost(se2 - offset, cells.cbegin(), cells.cend(), nullptr, nullptr);
+  const auto upper_cost =
+      pg.get_cost(se2 + offset, cells.cbegin(), cells.cend(), nullptr, nullptr);
 
-      const auto diff = (right_cost - left_cost) / 2.;
-      const auto error = diff - J.y();
+  // compute the relative error
+  const auto diff = (lower_cost - upper_cost) / 0.02;
+  const auto error = std::abs((diff - J.y()) / (diff ? diff : 1.));
 
-      EXPECT_LE(error, 0.5) << xx << ", " << yy;
-      mse += std::pow(error, 2);
-    }
-  }
-  mse /= (19 * 20);
-  EXPECT_LE(mse, 0.1);
+  // we expect that we are "good enough"
+  EXPECT_LE(error, 0.02) << ": " << diff << " vs " << J.y();
 }
 
 }  // namespace

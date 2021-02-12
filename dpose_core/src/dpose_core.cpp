@@ -291,8 +291,9 @@ cost_data::cost_data(const polygon& _footprint, size_t _padding) {
 }
 
 jacobian_data::jacobian_data(const cost_data& _d) {
-  cv::Sobel(_d.cost, d_array.at(0), cv::DataType<float>::type, 1, 0, 3, 1 / 8.);
-  cv::Sobel(_d.cost, d_array.at(1), cv::DataType<float>::type, 0, 1, 3, 1 / 8.);
+  const double scale = 1. / 32.;
+  cv::Scharr(_d.cost, d_array.at(0), cv::DataType<float>::type, 1, 0, scale);
+  cv::Scharr(_d.cost, d_array.at(1), cv::DataType<float>::type, 0, 1, scale);
   d_array.at(2) = _angular_derivative(_d.cost, _d.center);
 
   // safe the jacobians if compiled in debug mode
@@ -302,11 +303,11 @@ jacobian_data::jacobian_data(const cost_data& _d) {
 }
 
 hessian_data::hessian_data(const cost_data& _cost, const jacobian_data& _J) {
-  const auto scale = 1. / 16.;
+  const auto scale = 1. / 32.;
   // second derivative to x
-  cv::Sobel(_J.at(0), d_array.at(0), cv::DataType<float>::type, 1, 0, 3, scale);
-  cv::Sobel(_J.at(1), d_array.at(1), cv::DataType<float>::type, 1, 0, 3, scale);
-  cv::Sobel(_J.at(2), d_array.at(2), cv::DataType<float>::type, 1, 0, 3, scale);
+  cv::Scharr(_J.at(0), d_array.at(0), cv::DataType<float>::type, 1, 0, scale);
+  cv::Scharr(_J.at(1), d_array.at(1), cv::DataType<float>::type, 1, 0, scale);
+  cv::Scharr(_J.at(2), d_array.at(2), cv::DataType<float>::type, 1, 0, scale);
 
   // safe the hessians if compiled in debug mode
   assert(cv::imwrite("/tmp/d_x_x.jpg", d_array.at(0) * 10 + 100));
@@ -314,8 +315,8 @@ hessian_data::hessian_data(const cost_data& _cost, const jacobian_data& _J) {
   assert(cv::imwrite("/tmp/d_theta_x.jpg", d_array.at(2) * 10 + 100));
 
   // second derivative to y
-  cv::Sobel(_J.at(1), d_array.at(3), cv::DataType<float>::type, 0, 1, 3, scale);
-  cv::Sobel(_J.at(2), d_array.at(4), cv::DataType<float>::type, 0, 1, 3, scale);
+  cv::Scharr(_J.at(1), d_array.at(3), cv::DataType<float>::type, 0, 1, scale);
+  cv::Scharr(_J.at(2), d_array.at(4), cv::DataType<float>::type, 0, 1, scale);
 
   // safe the hessians if compiled in debug mode
   assert(cv::imwrite("/tmp/d_y_y.jpg", d_array.at(3) * 10 + 100));

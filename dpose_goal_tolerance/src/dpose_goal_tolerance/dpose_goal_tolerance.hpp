@@ -140,6 +140,7 @@ private:
   cell_vector lethal_cells_;    ///< vector of lethal cells
 
   std::vector<pose_regularization> regs_;
+  bool compute_hessian_ = false;
 
   void
   on_new_x(index _n, const number *_x);

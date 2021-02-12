@@ -94,7 +94,9 @@ pose_regularization::get_cost(const pose &_pose) noexcept {
 }
 
 problem::problem(costmap &_map, const pose_gradient::parameter &_param) :
-    costmap_(&_map), pg_(make_footprint(*_map.getLayeredCostmap()), _param) {}
+    costmap_(&_map),
+    pg_(make_footprint(*_map.getLayeredCostmap()), _param),
+    compute_hessian_(_param.generate_hessian) {}
 
 void
 problem::on_new_x(index _n, const number *_x) {
@@ -102,18 +104,33 @@ problem::on_new_x(index _n, const number *_x) {
   const pose offset(_x[0], _x[1], _x[2]);
   const pose p = offset + pose_;
 
-  // query the data
-  cost_ = pg_.get_cost(p, lethal_cells_.begin(), lethal_cells_.end(), &J_, &H_);
-  // flip the signs
-  J_ *= -1;
-  H_ *= -1;
-
+  // reset the cost
+  cost_ = 0;
   // apply the regularization for start and goal (if defined)
-  for (auto &reg : regs_) {
+  for (auto &reg : regs_)
     cost_ += reg.get_cost(p);
-    J_ += reg.get_jacobian();
-    H_ += reg.get_hessian();
+
+  // query the data
+  if (compute_hessian_) {
+    // the case where we use the hessian
+    cost_ =
+        pg_.get_cost(p, lethal_cells_.begin(), lethal_cells_.end(), &J_, &H_);
+
+    // assemble the hessian: flip the sign and add the hessians from the
+    // constraints.
+    H_ *= -1;
+    for (auto &reg : regs_)
+      H_ += reg.get_hessian();
   }
+  else
+    cost_ = pg_.get_cost(p, lethal_cells_.begin(), lethal_cells_.end(), &J_,
+                         nullptr);
+
+  // assemble the jacobian: flip the signs and add the jacobians from the
+  // constraints.
+  J_ *= -1;
+  for (auto &reg : regs_)
+    J_ += reg.get_jacobian();
 }
 
 void
@@ -162,9 +179,9 @@ problem::init(const pose &_start, const pose &_goal,
     // "goal".
     pose start = _start;
 
-    // if the distance between _start and _goal is bigger then the tolerance, we
-    // can never reach "zero" costs. we hence place a fake start pose at the
-    // goal-tolerance distance from _goal.
+    // if the distance between _start and _goal is bigger then the tolerance,
+    // we can never reach "zero" costs. we hence place a fake start pose at
+    // the goal-tolerance distance from _goal.
     pose diff = _start - _goal;
     diff.z() = angles::normalize_angle(diff.z());
 
@@ -459,8 +476,15 @@ DposeGoalTolerance::initialize(const std::string &_name, Map *_map) {
 
   // read the padding parameter and safely cast it to unsigned int
   const int padding = nh.param("padding", 2);
-  const auto u_padding = static_cast<unsigned int>(std::max(padding, 0));
-  problem_ = new problem(*map_, {u_padding, true});
+  pose_gradient::parameter param;
+  param.padding = static_cast<unsigned int>(std::max(padding, 0));
+  // the hessian from dpose is very noisy for most footprints and its better
+  // not to use it.
+  param.generate_hessian = nh.param("use_hessian", false);
+  if (param.generate_hessian)
+    DP_WARN_LOG("Hessian from dpose-core is very noisy");
+
+  problem_ = new problem(*map_, param);
   solver_ = IpoptApplicationFactory();
 
   // configure the solver
@@ -469,9 +493,12 @@ DposeGoalTolerance::initialize(const std::string &_name, Map *_map) {
   load_ipopt_cfg(solver_, nh, "output_file", "/tmp/ipopt.out");
   load_ipopt_cfg(solver_, nh, "max_iter", 20);
   load_ipopt_cfg(solver_, nh, "max_cpu_time", .5);
-  // the hessian from dpose is very noisy for most footprints and its better not
-  // to use it.
-  solver_->Options()->SetStringValue("hessian_approximation", "limited-memory");
+
+  // tell ipopt to use quasi-newtow method if we don't use the Hessian from
+  // dpose.
+  if (!param.generate_hessian)
+    solver_->Options()->SetStringValue("hessian_approximation",
+                                       "limited-memory");
 // print the derivative test if running in debug
 #ifndef NDEBUG
   solver_->Options()->SetStringValue("derivative_test", "first-order");

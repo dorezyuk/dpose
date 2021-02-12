@@ -4,9 +4,9 @@ The library allows you to extend your nav_core::GlobalPlanner with a goal tolera
 It implements the gpp_interface::PrePlanningInterface.
 In order to use it, you will need the [gpp_plugin::GppPlugin](https://github.com/dorezyuk/gpp.git).
 <p float="left" align="center">
-    <img src="doc/pill.gif" alt="pill" style="height: 400px;"/>
-    <img src="doc/arrow.gif" alt="arrow" style="height: 400px;"/>
-    <img src="doc/banana.gif" alt="banana" style="height: 400px;"/>
+    <img src="doc/pill.gif" alt="pill" style="height: 300px;"/>
+    <img src="doc/arrow.gif" alt="arrow" style="height: 300px;"/>
+    <img src="doc/banana.gif" alt="banana" style="height: 300px;"/>
 </p>
 The library works with arbitrary footprints as showcased above.
 The gifs show the original global pose as red arrows.

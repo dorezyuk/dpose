@@ -4,7 +4,6 @@ The library allows you to extend your nav_core::GlobalPlanner with a goal tolera
 It implements the gpp_interface::PrePlanningInterface.
 In order to use it, you will need the [gpp_plugin::GppPlugin](https://github.com/dorezyuk/gpp.git).
 <p float="left" align="center">
-    <img src="doc/pill.gif" alt="pill" style="height: 300px;"/>
     <img src="doc/arrow.gif" alt="arrow" style="height: 300px;"/>
     <img src="doc/banana.gif" alt="banana" style="height: 300px;"/>
 </p>
@@ -12,7 +11,7 @@ The library works with arbitrary footprints as showcased above.
 The gifs show the original global pose as red arrows.
 The displaced pose is shown as a green arrow.
 The underlying displaced footprint is depicted as a green polygon.
-The left gif show-cases the pose-displacement for a pill-shaped robot.
+The left gif show-cases the pose-displacement for a arrow-shaped robot.
 The right gif shows the functionality for a banana-shaped robot.
 
 ## Implementation
@@ -34,8 +33,27 @@ This library defines additionally to the cost-function implemented in DposeCore 
 They can be controlled by the weights `weight_<start|goal>_<lin|rot>` (see below).
 The weights `weight_goal_<lin|rot>` are used in a cost function which penalizes the distance to the original **goal**.
 Increasing those weights will force the optimizer to prefer solutions closer to the goal pose.
+
+<p float="left" align="center">
+    <img src="doc/pill.gif" alt="pill" style="height: 300px;"/>
+    <img src="doc/pill_constrained_goal.gif" alt="goal" style="height: 300px;"/>
+</p>
+
+The effect is demonstrated above. The left image shows the goal displacements on a pill-shaped robot.
+The right image shows the same sequence with an additional penalty on the distance to the original goal, resulting is smaller displacements.
+
 The weights `weight_start_<lin|rot>` are used in the cost function which penalizes the distance to the **current pose** of the robot.
 Increasing those weights results in a "greedy" heuristic, forcing the optimizer to move the solution towards the robot.
+
+<p float="left" align="center">
+    <img src="doc/pill.gif" alt="pill" style="height: 300px;"/>
+    <img src="doc/pill_constrained_start.gif" alt="start" style="height: 300px;"/>
+</p>
+
+The effect of this configuration is shown above. Again, the left side shows the unconstrained goal tolerance.
+The right side shows the start pose of the robot as a black pill.
+The resulting pose is closer to the start pose.
+Pay attention to the gif: for one pose (lower left) the optimization fails.
 
 ## Build and Install
 

@@ -40,31 +40,29 @@ perf_dpose_core(State& state) {
   pose_gradient pg(make_arrow(), {3, true});
   pose_gradient::pose se2(0, 0, 0);
   pose_gradient::jacobian J;
-  pose_gradient::hessian H;
 
   // setup the cells
   const cell_vector cells = make_cells();
   // run the tests
   for (auto _ : state)
-    pg.get_cost(se2, cells.begin(), cells.end(), &J, &H);
+    pg.get_cost(se2, cells.begin(), cells.end(), &J);
 }
 
 static void
-perf_dpose_core_no_hessian(State& state) {
+perf_dpose_core_no_jacobian(State& state) {
   // setup the pg struct
   pose_gradient pg(make_arrow(), {3, true});
   pose_gradient::pose se2(0, 0, 0);
-  pose_gradient::jacobian J;
 
   // setup the cells
   const cell_vector cells = make_cells();
 
   // run the tests
   for (auto _ : state)
-    pg.get_cost(se2, cells.begin(), cells.end(), &J, nullptr);
+    pg.get_cost(se2, cells.begin(), cells.end(), nullptr);
 }
 
 BENCHMARK(perf_dpose_core);
-BENCHMARK(perf_dpose_core_no_hessian);
+BENCHMARK(perf_dpose_core_no_jacobian);
 
 BENCHMARK_MAIN();

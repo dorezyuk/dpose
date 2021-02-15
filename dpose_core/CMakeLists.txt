@@ -54,7 +54,6 @@ if(CATKIN_ENABLE_TESTING)
   find_package(rostest)
   catkin_add_gtest(${PROJECT_NAME}_test
     test/cost_data.cpp
-    test/hessian_data.cpp
     test/jacobian_data.cpp
     test/pose_gradient.cpp)
 

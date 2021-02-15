@@ -42,16 +42,16 @@ INSTANTIATE_TEST_SUITE_P(/**/, rotation, Range(0.1, 1.5, 0.1));
 
 TEST_P(rotation, x_grad) {
   pose_gradient::pose offset(1e-6, 0, 0);
-  pg.get_cost(se2, cells.cbegin(), cells.cend(), &J, nullptr);
+  pg.get_cost(se2, cells.cbegin(), cells.cend(), &J);
 
   // get the costs left and right of the pose
   const auto left_cost =
-      pg.get_cost(se2 - offset, cells.cbegin(), cells.cend(), nullptr, nullptr);
+      pg.get_cost(se2 - offset, cells.cbegin(), cells.cend(), nullptr);
   const auto right_cost =
-      pg.get_cost(se2 + offset, cells.cbegin(), cells.cend(), nullptr, nullptr);
+      pg.get_cost(se2 + offset, cells.cbegin(), cells.cend(), nullptr);
 
   // compute the relative error
-  const auto diff = (left_cost - right_cost) / 2e-6 ;
+  const auto diff = (right_cost - left_cost) / 2e-6;
   const auto error = std::abs((diff - J.x()) / (diff ? diff : 1.));
 
   // we expect that we are "good enough"
@@ -61,16 +61,16 @@ TEST_P(rotation, x_grad) {
 // copy and pasted from above - with the  y-values now under test
 TEST_P(rotation, y_grad) {
   pose_gradient::pose offset(0., 1e-6, 0);
-  pg.get_cost(se2, cells.cbegin(), cells.cend(), &J, nullptr);
+  pg.get_cost(se2, cells.cbegin(), cells.cend(), &J);
 
   // get the costs left and right of the pose
   const auto lower_cost =
-      pg.get_cost(se2 - offset, cells.cbegin(), cells.cend(), nullptr, nullptr);
+      pg.get_cost(se2 - offset, cells.cbegin(), cells.cend(), nullptr);
   const auto upper_cost =
-      pg.get_cost(se2 + offset, cells.cbegin(), cells.cend(), nullptr, nullptr);
+      pg.get_cost(se2 + offset, cells.cbegin(), cells.cend(), nullptr);
 
   // compute the relative error
-  const auto diff = (lower_cost - upper_cost) / 2e-6 ;
+  const auto diff = (upper_cost - lower_cost) / 2e-6;
   const auto error = std::abs((diff - J.y()) / (diff ? diff : 1.));
 
   // we expect that we are "good enough"

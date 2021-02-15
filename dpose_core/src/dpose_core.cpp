@@ -112,163 +112,10 @@ _get_cost(const polygon& _fp, size_t& _padding) {
   return edt;
 }
 
-/// @brief helper to prune repetitions from _get_circular_cells
-/// @param _cells the pre-output from _get_circular_cells
-void
-_unique_cells(_cv_cell_vector& _cells) noexcept {
-  if (_cells.empty())
-    return;
-  // use first unique to remove the overlaps
-  auto last = std::unique(_cells.begin(), _cells.end());
-
-  // now check if we loop - see if the first cells reappears
-  last = std::find(std::next(_cells.begin()), last, _cells.front());
-
-  // drop the redundant data
-  _cells.erase(last, _cells.end());
-}
-
-/// @brief returns the cells around _center at the given _radius
-/// @param _center the center cell
-/// @param _radius the radius (also in cells)
-_cv_cell_vector
-_get_circular_cells(const _cv_cell& _center, size_t _radius) noexcept {
-  // adjusted from
-  // https://github.com/opencv/opencv/blob/master/modules/imgproc/src/drawing.cpp
-  int x = _radius, y = 0;
-  int err = 0, plus = 1, minus = (_radius << 1) - 1;
-
-  std::array<_cv_cell_vector, 8> octets;
-
-  while (x >= y) {
-    // insert the octets - for now without fancy looping
-    // note: the order of these octets is very important
-    auto octet = octets.begin();
-    // clang-format off
-    octet->emplace_back(_center.x + x, _center.y + y); ++octet;
-    octet->emplace_back(_center.x + y, _center.y + x); ++octet;
-    octet->emplace_back(_center.x - y, _center.y + x); ++octet;
-    octet->emplace_back(_center.x - x, _center.y + y); ++octet;
-    octet->emplace_back(_center.x - x, _center.y - y); ++octet;
-    octet->emplace_back(_center.x - y, _center.y - x); ++octet;
-    octet->emplace_back(_center.x + y, _center.y - x); ++octet;
-    octet->emplace_back(_center.x + x, _center.y - y); ++octet;
-    // clang-format on
-
-    ++y;
-    err += plus;
-    plus += 2;
-
-    int mask = (err <= 0) - 1;
-
-    err -= minus & mask;
-    x += mask;
-    minus -= mask & 2;
-  }
-
-  // now flatten the octets
-  _cv_cell_vector cells;
-  cells.reserve(octets.begin()->size() * octets.size());
-  // we have to reverse every second octet
-  bool reverse = false;
-  for (const auto& octet : octets) {
-    if (reverse)
-      cells.insert(cells.end(), octet.rbegin(), octet.rend());
-    else
-      cells.insert(cells.end(), octet.begin(), octet.end());
-    reverse = !reverse;
-  }
-
-  _unique_cells(cells);
-  return cells;
-}
-
-/// @brief checks if the _cell is within the _image
-inline bool
-_is_valid(const _cv_cell& _cell, const cv::Mat& _image) noexcept {
-  return 0 <= _cell.x && _cell.x < _image.cols && 0 <= _cell.y &&
-         _cell.y < _image.rows;
-}
-
-/**
- * @brief calculates the angular gradient given a _prev and _next cell.
- *
- * It is expected that _image and _source have the same size.
- * The method is a helper for _angular_derivative.
- *
- * @param _prev previous cell on a circle
- * @param _curr the cell of interest of a circle
- * @param _next next cell on a circle
- * @param _image image where to store the gradient
- * @param _source image based on which we are computing the gradient
- */
-void
-_mark_gradient(const _cv_cell& _prev, const _cv_cell& _curr,
-               const _cv_cell& _next, cv::Mat& _image,
-               const cv::Mat& _source) noexcept {
-  // skip if not all are valid
-  if (_is_valid(_curr, _image) && _is_valid(_prev, _source) &&
-      _is_valid(_next, _source)) {
-    // todo the scaling by the step size is missing
-    _image.at<float>(_curr) =
-        _source.at<float>(_next) - _source.at<float>(_prev);
-  }
-}
-
 /// @brief generates a rectangle with the size of _cm
 inline rectangle<int>
 _to_rectangle(const cv::Mat& _cm) noexcept {
   return to_rectangle<int>(_cm.cols, _cm.rows);
-}
-
-/// @brief returns the max distance from _image's corners to _cell
-inline int
-_max_distance(const cv::Mat& _image, const Eigen::Vector2i& _cell) noexcept {
-  const rectangle<int> r = _to_rectangle(_image).colwise() - _cell;
-  const Eigen::Matrix<double, 1UL, 5UL> d = r.cast<double>().colwise().norm();
-  return static_cast<int>(d.maxCoeff());
-}
-
-/// @brief calculates the "circular" derivate of _image around the _center cell
-/// @param _image image on which to perform the derivative
-/// @param _center center of rotation.
-cv::Mat
-_angular_derivative(cv::InputArray _image,
-                    const Eigen::Vector2i& _center) noexcept {
-  // get the distance
-  const auto distance = _max_distance(_image.getMat(), _center);
-
-  assert(distance >= 0 && "failed to compute max-distance");
-
-  // init the output image
-  cv::Mat output(_image.size(), cv::DataType<float>::type, cv::Scalar(0));
-  cv::Mat source = _image.getMat();
-  const _cv_cell center(_center.x(), _center.y());
-
-  // now iterate over the all steps
-  for (int ii = 1; ii <= distance; ++ii) {
-    const auto cells = _get_circular_cells(center, ii);
-
-    // now we loop over the cells and get the gradient
-    // we will need at least three points for this
-    assert(cells.size() > 2 && "invalid circular cells");
-
-    // beginning and end are special
-    _mark_gradient(*cells.rbegin(), *cells.begin(), *std::next(cells.begin()),
-                   output, source);
-
-    // iterate over all consecutive cells
-    for (auto prev = cells.begin(), curr = std::next(prev),
-              next = std::next(curr);
-         next != cells.end(); ++prev, ++curr, ++next)
-      _mark_gradient(*prev, *curr, *next, output, source);
-
-    // now do the end
-    _mark_gradient(*std::next(cells.rbegin()), *cells.rbegin(), *cells.begin(),
-                   output, source);
-  }
-
-  return output;
 }
 
 cost_data::cost_data(const polygon& _footprint, size_t _padding) {
@@ -290,45 +137,6 @@ cost_data::cost_data(const polygon& _footprint, size_t _padding) {
   box = _to_rectangle(cost).colwise() - center;
 }
 
-jacobian_data::jacobian_data(const cost_data& _d) {
-  const double scale = 1. / 32.;
-  cv::Scharr(_d.cost, d_array.at(0), cv::DataType<float>::type, 1, 0, scale);
-  cv::Scharr(_d.cost, d_array.at(1), cv::DataType<float>::type, 0, 1, scale);
-  d_array.at(2) = _angular_derivative(_d.cost, _d.center);
-
-  // safe the jacobians if compiled in debug mode
-  assert(cv::imwrite("/tmp/d_x.jpg", d_array.at(0) * 10 + 100));
-  assert(cv::imwrite("/tmp/d_y.jpg", d_array.at(1) * 10 + 100));
-  assert(cv::imwrite("/tmp/d_theta.jpg", d_array.at(2) * 10 + 100));
-}
-
-hessian_data::hessian_data(const cost_data& _cost, const jacobian_data& _J) {
-  const auto scale = 1. / 32.;
-  // second derivative to x
-  cv::Scharr(_J.at(0), d_array.at(0), cv::DataType<float>::type, 1, 0, scale);
-  cv::Scharr(_J.at(1), d_array.at(1), cv::DataType<float>::type, 1, 0, scale);
-  cv::Scharr(_J.at(2), d_array.at(2), cv::DataType<float>::type, 1, 0, scale);
-
-  // safe the hessians if compiled in debug mode
-  assert(cv::imwrite("/tmp/d_x_x.jpg", d_array.at(0) * 10 + 100));
-  assert(cv::imwrite("/tmp/d_y_x.jpg", d_array.at(1) * 10 + 100));
-  assert(cv::imwrite("/tmp/d_theta_x.jpg", d_array.at(2) * 10 + 100));
-
-  // second derivative to y
-  cv::Scharr(_J.at(1), d_array.at(3), cv::DataType<float>::type, 0, 1, scale);
-  cv::Scharr(_J.at(2), d_array.at(4), cv::DataType<float>::type, 0, 1, scale);
-
-  // safe the hessians if compiled in debug mode
-  assert(cv::imwrite("/tmp/d_y_y.jpg", d_array.at(3) * 10 + 100));
-  assert(cv::imwrite("/tmp/d_theta_y.jpg", d_array.at(4) * 10 + 100));
-
-  // second derivative to theta
-  d_array.at(5) = _angular_derivative(_J.at(2), _cost.center) * 1. / 64.;
-
-  // safe the hessians if compiled in debug mode
-  assert(cv::imwrite("/tmp/d_theta_theta.jpg", d_array.at(5) * 10 + 100));
-}
-
 using transform_type = Eigen::Isometry2d;
 
 inline transform_type
@@ -343,10 +151,7 @@ pose_gradient::pose_gradient(const polygon& _footprint,
   if (_footprint.cols() < 3)
     throw std::runtime_error("footprint must contain at least three points");
 
-  data_.core = cost_data(_footprint, _param.padding);
-  data_.J = jacobian_data(data_.core);
-  if (_param.generate_hessian)
-    data_.H = hessian_data(data_.core, data_.J);
+  data_ = cost_data(_footprint, _param.padding);
 }
 
 inline void
@@ -406,12 +211,11 @@ private:
 
 double
 pose_gradient::get_cost(const pose& _se2, cell_vector::const_iterator _begin,
-                        cell_vector::const_iterator _end, jacobian* _J,
-                        hessian* _H) const {
+                        cell_vector::const_iterator _end, jacobian* _J) const {
   // note: all computations are done in the cell space.
   // indedices are map (m), baselink (b) and kernel (k).
   // get the transform from map (m) to kernel (k)
-  const auto& center = data_.core.get_center();
+  const auto& center = data_.get_center();
   const transform_type m_to_b = to_eigen(_se2.x(), _se2.y(), _se2.z());
   const transform_type b_to_k = to_eigen(-center.x(), -center.y(), 0);
   const transform_type m_to_k = m_to_b * b_to_k;
@@ -432,26 +236,23 @@ pose_gradient::get_cost(const pose& _se2, cell_vector::const_iterator _begin,
   if (_J)
     *_J = jacobian::Zero();
 
-  if (_H)
-    *_H = hessian::Zero();
-
   const transform_type k_to_m = m_to_k.inverse();
 
   Eigen::Array2d k_cell;
-  interpolator ip(data_.core.get_data());
+  interpolator ip(data_.get_data());
 
   for (; _begin != _end; ++_begin) {
     // convert to the kernel frame
     k_cell = (k_to_m * _begin->cast<double>()).array();
 
-    // return false if the k_cell is outsize of the kernel-bounds
+    // returns false if the k_cell is outsize of the kernel-bounds
     if (!ip.init(k_cell))
       continue;
 
     // update the cost
     sum += ip.get(k_cell);
 
-    // J and H are optional
+    // J is optional
     if (_J) {
       const double dx_lower = ip.get(x_lower * _begin->cast<double>().array());
       const double dx_upper = ip.get(x_upper * _begin->cast<double>().array());
@@ -465,37 +266,6 @@ pose_gradient::get_cost(const pose& _se2, cell_vector::const_iterator _begin,
       const double dz_upper = ip.get(z_upper * _begin->cast<double>().array());
       _J->z() += ((dz_upper - dz_lower) * 5e5);
     }
-
-    if (_H) {
-      // for (size_t ii = 0; ii != 6; ++ii) {
-      //   _interpolate(data_.H.at(ii), k_lower, k_upper, m);
-      //   // note: we write out of order and fix this below
-      //   // eigen defaults to col-major ordering
-      //   (*_H)(ii) += c_rel_x.transpose() * m * c_rel_y;
-      // }
-    }
-  }
-
-  // flip the derivate back to the original frame.
-  // note: we don't do this for the "theta"-part
-  Eigen::Matrix3d rot = m_to_k.matrix();
-  rot(0, 2) = 0;
-  rot(1, 2) = 0;
-
-  // if (_J)
-  //   *_J = rot * *_J;
-
-  if (_H) {
-    // fix the lazy ordering from above
-    hessian H = *_H;
-    H(2, 2) = H(5);            // theta theta
-    H(1, 2) = H(2, 1) = H(4);  // y theta
-    H(1, 1) = H(3);            // y y
-    H(0, 2) = H(2, 0);         // x theta
-    H(0, 1) = H(1, 0);         // x y
-
-    // apply the rotation
-    *_H = rot * H * rot.transpose();
   }
 
   return sum;

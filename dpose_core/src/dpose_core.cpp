@@ -171,6 +171,8 @@ bool
 interpolator::init(const Eigen::Array2d& k_cell) {
   // interpolate the cost: get the cell-indices of interest.
   // see https://en.wikipedia.org/wiki/Bilinear_interpolation for details.
+  // todo if i switch to ceil and make the lower left cornor the anchor, it's
+  // gonna be faster
   k_upper = k_cell.round().cast<int>();
   k_lower = k_upper - 1;
 

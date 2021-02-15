@@ -42,7 +42,7 @@ struct rotated_hessian : public TestWithParam<double> {
 
 INSTANTIATE_TEST_SUITE_P(/**/, rotated_hessian, Range(0., 1.5, 0.1));
 
-TEST_P(rotated_hessian, xx_grad) {
+TEST_P(rotated_hessian, DISABLED_xx_grad) {
   pose_gradient::pose offset(0.01, 0, 0);
   pg.get_cost(se2, cells.cbegin(), cells.cend(), nullptr, &H);
 
@@ -58,7 +58,7 @@ TEST_P(rotated_hessian, xx_grad) {
   EXPECT_LE(error, 0.07) << ": " << diff << " vs " << H(0, 0);
 }
 
-TEST_P(rotated_hessian, yy_grad) {
+TEST_P(rotated_hessian, DISABLED_yy_grad) {
   pose_gradient::pose offset(0, 0.01, 0);
   pg.get_cost(se2, cells.cbegin(), cells.cend(), nullptr, &H);
 

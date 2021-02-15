@@ -38,10 +38,10 @@ struct rotation : public TestWithParam<double> {
   }
 };
 
-INSTANTIATE_TEST_SUITE_P(/**/, rotation, Range(0., 1.5, 0.1));
+INSTANTIATE_TEST_SUITE_P(/**/, rotation, Range(0.1, 1.5, 0.1));
 
 TEST_P(rotation, x_grad) {
-  pose_gradient::pose offset(0.01, 0, 0);
+  pose_gradient::pose offset(1e-6, 0, 0);
   pg.get_cost(se2, cells.cbegin(), cells.cend(), &J, nullptr);
 
   // get the costs left and right of the pose
@@ -51,16 +51,16 @@ TEST_P(rotation, x_grad) {
       pg.get_cost(se2 + offset, cells.cbegin(), cells.cend(), nullptr, nullptr);
 
   // compute the relative error
-  const auto diff = (left_cost - right_cost) / 0.02;
+  const auto diff = (left_cost - right_cost) / 2e-6 ;
   const auto error = std::abs((diff - J.x()) / (diff ? diff : 1.));
 
   // we expect that we are "good enough"
-  EXPECT_LE(error, 0.02) << ": " << diff << " vs " << J.x();
+  EXPECT_LE(error, 0.001) << ": " << diff << " vs " << J.x();
 }
 
 // copy and pasted from above - with the  y-values now under test
 TEST_P(rotation, y_grad) {
-  pose_gradient::pose offset(0., 0.01, 0);
+  pose_gradient::pose offset(0., 1e-6, 0);
   pg.get_cost(se2, cells.cbegin(), cells.cend(), &J, nullptr);
 
   // get the costs left and right of the pose
@@ -70,7 +70,7 @@ TEST_P(rotation, y_grad) {
       pg.get_cost(se2 + offset, cells.cbegin(), cells.cend(), nullptr, nullptr);
 
   // compute the relative error
-  const auto diff = (lower_cost - upper_cost) / 0.02;
+  const auto diff = (lower_cost - upper_cost) / 2e-6 ;
   const auto error = std::abs((diff - J.y()) / (diff ? diff : 1.));
 
   // we expect that we are "good enough"

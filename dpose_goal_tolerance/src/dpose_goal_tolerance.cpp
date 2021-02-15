@@ -500,11 +500,11 @@ DposeGoalTolerance::initialize(const std::string &_name, Map *_map) {
     solver_->Options()->SetStringValue("hessian_approximation",
                                        "limited-memory");
 // print the derivative test if running in debug
-#ifndef NDEBUG
+//#ifndef NDEBUG
   solver_->Options()->SetStringValue("derivative_test", "first-order");
   solver_->Options()->SetNumericValue("derivative_test_perturbation", 0.00001);
   solver_->Options()->SetNumericValue("point_perturbation_radius", 10);
-#endif
+//#endif
 
   pose_pub_ = nh.advertise<Pose>("filtered", 1);
 

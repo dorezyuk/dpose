@@ -205,7 +205,7 @@ struct pose_gradient {
   /// @param[in] _se2 pose of interest. should be in the global frame.
   /// @param[out] _J optional jacobian. will be ignored if nullptr
   /// @param[out] _H optional hessian. will be ignored if nullptr
-  float
+  double
   get_cost(const pose& _se2, cell_vector::const_iterator _begin,
            cell_vector::const_iterator _end, jacobian* _J, hessian* _H) const;
 

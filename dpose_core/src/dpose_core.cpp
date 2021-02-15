@@ -359,7 +359,51 @@ _interpolate(const cv::Mat& _image, const Eigen::Array2i& _lower,
       _image.at<float>(_upper(1), _upper(0));
 }
 
-float
+struct interpolator {
+  interpolator(const cv::Mat& _image) :
+      image_(_image), bounds(image_.cols - 1, image_.rows - 1) {}
+
+  bool
+  init(const Eigen::Array2d& k_cell) {
+    // interpolate the cost: get the cell-indices of interest.
+    // see https://en.wikipedia.org/wiki/Bilinear_interpolation for details.
+    k_upper = k_cell.round().cast<int>();
+    k_lower = k_upper - 1;
+
+    // check if the end-points are valid
+    if ((k_lower < 1).any() || (k_upper >= bounds.cast<int>()).any())
+      return false;
+
+    // init the m-matrix
+    _interpolate(image_, k_lower, k_upper, m);
+    return true;
+  }
+
+  double
+  get(const Eigen::Array2d& k_cell) {
+    // c_rel is the normalized point w.r.t a cell.
+    // c_rel is defined in [0, 1]^2
+    c_rel = k_cell.array() - k_upper.cast<double>() + 0.5;
+
+    // assert that all bounds are valid
+    assert((c_rel.array() >= 0).all() && "bad relative index");
+    assert((c_rel.array() <= 1).all() && "bad relative index");
+
+    c_rel_x << 1 - c_rel(0), c_rel(0);
+    c_rel_y << 1 - c_rel(1), c_rel(1);
+
+    return c_rel_x.transpose() * m * c_rel_y;
+  }
+
+private:
+  const Eigen::Array2d bounds;
+  const cv::Mat image_;
+  Eigen::Array2i k_lower, k_upper;
+  Eigen::Vector2d c_rel, c_rel_x, c_rel_y;
+  Eigen::Matrix2d m;
+};
+
+double
 pose_gradient::get_cost(const pose& _se2, cell_vector::const_iterator _begin,
                         cell_vector::const_iterator _end, jacobian* _J,
                         hessian* _H) const {
@@ -371,7 +415,17 @@ pose_gradient::get_cost(const pose& _se2, cell_vector::const_iterator _begin,
   const transform_type b_to_k = to_eigen(-center.x(), -center.y(), 0);
   const transform_type m_to_k = m_to_b * b_to_k;
 
-  float sum = 0;
+  constexpr double offset = 1e-6;
+
+  // clang-format off
+  const transform_type x_lower = (to_eigen(_se2.x() - offset, _se2.y(), _se2.z()) * b_to_k).inverse();
+  const transform_type x_upper = (to_eigen(_se2.x() + offset, _se2.y(), _se2.z()) * b_to_k).inverse();
+  const transform_type y_lower = (to_eigen(_se2.x(), _se2.y() - offset, _se2.z()) * b_to_k).inverse();
+  const transform_type y_upper = (to_eigen(_se2.x(), _se2.y() + offset, _se2.z()) * b_to_k).inverse();
+  const transform_type z_lower = (to_eigen(_se2.x(), _se2.y(), _se2.z() - offset) * b_to_k).inverse();
+  const transform_type z_upper = (to_eigen(_se2.x(), _se2.y(), _se2.z() + offset) * b_to_k).inverse();
+  // clang-format on
+  double sum = 0;
 
   // init the output values
   if (_J)
@@ -381,53 +435,48 @@ pose_gradient::get_cost(const pose& _se2, cell_vector::const_iterator _begin,
     *_H = hessian::Zero();
 
   const transform_type k_to_m = m_to_k.inverse();
-  const Eigen::Array2d bounds(data_.core.get_data().cols -1,
-                              data_.core.get_data().rows -1);
 
   Eigen::Array2d k_cell;
-  Eigen::Array2i k_lower, k_upper;
-  Eigen::Matrix2d m;
-  Eigen::Vector2d c_rel, c_rel_x, c_rel_y;
+  interpolator ip(data_.core.get_data());
 
   for (; _begin != _end; ++_begin) {
     // convert to the kernel frame
     k_cell = (k_to_m * _begin->cast<double>()).array();
 
-    // interpolate the cost: get the cell-indices of interest.
-    // see https://en.wikipedia.org/wiki/Bilinear_interpolation for details.
-    k_upper = k_cell.round().cast<int>();
-    k_lower = k_upper - 1;
-
-    // check if the interpolated points are valid
-    // note: we need always an extra cell for the interpolation
-    if ((k_lower < 1).any() || (k_upper >= bounds.cast<int>()).any())
+    // return false if the k_cell is outsize of the kernel-bounds
+    if (!ip.init(k_cell))
       continue;
 
-    // c_rel is the normalized point w.r.t a cell.
-    // c_rel is defined in [0, 1]^2
-    c_rel = k_cell.array() - k_upper.cast<double>() + 0.5;
-    c_rel_x << 1 - c_rel(0), c_rel(0);
-    c_rel_y << 1 - c_rel(1), c_rel(1);
-
     // update the cost
-    _interpolate(data_.core.get_data(), k_lower, k_upper, m);
-    sum += c_rel_x.transpose() * m * c_rel_y;
+    sum += ip.get(k_cell);
 
     // J and H are optional
     if (_J) {
-      for (size_t ii = 0; ii != 3; ++ii) {
-        _interpolate(data_.J.at(ii), k_lower, k_upper, m);
-        (*_J)(ii) += c_rel_x.transpose() * m * c_rel_y;
-      }
+      const double dx_lower = ip.get(x_lower * _begin->cast<double>().array());
+      const double dx_upper = ip.get(x_upper * _begin->cast<double>().array());
+      _J->x() += ((dx_lower - dx_upper) * 0.5 * 1e6);
+
+      const double dy_lower = ip.get(y_lower * _begin->cast<double>().array());
+      const double dy_upper = ip.get(y_upper * _begin->cast<double>().array());
+      _J->y() += ((dy_lower - dy_upper) * 0.5 * 1e6);
+
+      const double dz_lower = ip.get(z_lower * _begin->cast<double>().array());
+      const double dz_upper = ip.get(z_upper * _begin->cast<double>().array());
+      _J->z() += ((dz_lower - dz_upper) * 5e5);
+
+      // for (size_t ii = 0; ii != 3; ++ii) {
+      //   _interpolate(data_.J.at(ii), k_lower, k_upper, m);
+      //   (*_J)(ii) += c_rel_x.transpose() * m * c_rel_y;
+      // }
     }
 
     if (_H) {
-      for (size_t ii = 0; ii != 6; ++ii) {
-        _interpolate(data_.H.at(ii), k_lower, k_upper, m);
-        // note: we write out of order and fix this below
-        // eigen defaults to col-major ordering
-        (*_H)(ii) += c_rel_x.transpose() * m * c_rel_y;
-      }
+      // for (size_t ii = 0; ii != 6; ++ii) {
+      //   _interpolate(data_.H.at(ii), k_lower, k_upper, m);
+      //   // note: we write out of order and fix this below
+      //   // eigen defaults to col-major ordering
+      //   (*_H)(ii) += c_rel_x.transpose() * m * c_rel_y;
+      // }
     }
   }
 
@@ -437,8 +486,8 @@ pose_gradient::get_cost(const pose& _se2, cell_vector::const_iterator _begin,
   rot(0, 2) = 0;
   rot(1, 2) = 0;
 
-  if (_J)
-    *_J = rot * *_J;
+  // if (_J)
+  //   *_J = rot * *_J;
 
   if (_H) {
     // fix the lazy ordering from above

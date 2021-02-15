@@ -101,6 +101,23 @@ private:
   rectangle<int> box;  ///< the bounding box
 };
 
+struct interpolator {
+  interpolator(const cv::Mat& _image);
+
+  bool
+  init(const Eigen::Array2d& k_cell);
+
+  double
+  get(const Eigen::Array2d& k_cell);
+
+private:
+  const Eigen::Array2d bounds;
+  const cv::Mat image_;
+  Eigen::Array2i k_lower, k_upper;
+  Eigen::Vector2d c_rel, c_rel_x, c_rel_y;
+  Eigen::Matrix2d m;
+};
+
 /**
  * @brief computes a pose-gradient from the given costmap
  *

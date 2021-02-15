@@ -164,50 +164,35 @@ _interpolate(const cv::Mat& _image, const Eigen::Array2i& _lower,
       _image.at<float>(_upper(1), _upper(0));
 }
 
-struct interpolator {
-  interpolator(const cv::Mat& _image) :
-      image_(_image), bounds(_image.cols - 1, _image.rows - 1) {}
+interpolator::interpolator(const cv::Mat& _image) :
+    image_(_image), bounds(_image.cols - 1, _image.rows - 1) {}
 
-  bool
-  init(const Eigen::Array2d& k_cell) {
-    // interpolate the cost: get the cell-indices of interest.
-    // see https://en.wikipedia.org/wiki/Bilinear_interpolation for details.
-    k_upper = k_cell.round().cast<int>();
-    k_lower = k_upper - 1;
+bool
+interpolator::init(const Eigen::Array2d& k_cell) {
+  // interpolate the cost: get the cell-indices of interest.
+  // see https://en.wikipedia.org/wiki/Bilinear_interpolation for details.
+  k_upper = k_cell.round().cast<int>();
+  k_lower = k_upper - 1;
 
-    // check if the end-points are valid
-    if ((k_lower < 1).any() || (k_upper >= bounds.cast<int>()).any())
-      return false;
+  // check if the end-points are valid
+  if ((k_lower < 1).any() || (k_upper >= bounds.cast<int>()).any())
+    return false;
 
-    // init the m-matrix
-    _interpolate(image_, k_lower, k_upper, m);
-    return true;
-  }
+  // init the m-matrix
+  _interpolate(image_, k_lower, k_upper, m);
+  return true;
+}
 
-  double
-  get(const Eigen::Array2d& k_cell) {
-    // c_rel is the normalized point w.r.t a cell.
-    // c_rel is defined in [0, 1]^2
-    c_rel = k_cell.array() - k_upper.cast<double>() + 0.5;
-    c_rel = c_rel.array().max(0).min(1).matrix();
+double
+interpolator::get(const Eigen::Array2d& k_cell) {
+  // c_rel is the normalized point w.r.t a cell.
+  // c_rel is defined in [0, 1]^2
+  c_rel = k_cell.array() - k_upper.cast<double>() + 0.5;
+  c_rel_x << 1 - c_rel(0), c_rel(0);
+  c_rel_y << 1 - c_rel(1), c_rel(1);
 
-    // assert that all bounds are valid
-    assert((c_rel.array() >= 0).all() && "bad relative index");
-    assert((c_rel.array() <= 1).all() && "bad relative index");
-
-    c_rel_x << 1 - c_rel(0), c_rel(0);
-    c_rel_y << 1 - c_rel(1), c_rel(1);
-
-    return c_rel_x.transpose() * m * c_rel_y;
-  }
-
-private:
-  const Eigen::Array2d bounds;
-  const cv::Mat image_;
-  Eigen::Array2i k_lower, k_upper;
-  Eigen::Vector2d c_rel, c_rel_x, c_rel_y;
-  Eigen::Matrix2d m;
-};
+  return c_rel_x.transpose() * m * c_rel_y;
+}
 
 double
 pose_gradient::get_cost(const pose& _se2, cell_vector::const_iterator _begin,

@@ -113,23 +113,21 @@ problem::on_new_x(index _n, const number *_x) {
   // query the data
   if (compute_hessian_) {
     // the case where we use the hessian
-    cost_ =
+    cost_ +=
         pg_.get_cost(p, lethal_cells_.begin(), lethal_cells_.end(), &J_, &H_);
 
     // assemble the hessian: flip the sign and add the hessians from the
     // constraints.
     H_ *= -1;
-    for (auto &reg : regs_)
+    for (const auto &reg : regs_)
       H_ += reg.get_hessian();
   }
   else
-    cost_ = pg_.get_cost(p, lethal_cells_.begin(), lethal_cells_.end(), &J_,
+    cost_ += pg_.get_cost(p, lethal_cells_.begin(), lethal_cells_.end(), &J_,
                          nullptr);
 
-  // assemble the jacobian: flip the signs and add the jacobians from the
-  // constraints.
-  J_ *= -1;
-  for (auto &reg : regs_)
+  // assemble the jacobian
+  for (const auto &reg : regs_)
     J_ += reg.get_jacobian();
 }
 

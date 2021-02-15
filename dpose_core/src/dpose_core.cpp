@@ -455,15 +455,15 @@ pose_gradient::get_cost(const pose& _se2, cell_vector::const_iterator _begin,
     if (_J) {
       const double dx_lower = ip.get(x_lower * _begin->cast<double>().array());
       const double dx_upper = ip.get(x_upper * _begin->cast<double>().array());
-      _J->x() += ((dx_lower - dx_upper) * 5e5);
+      _J->x() += ((dx_upper - dx_lower) * 5e5);
 
       const double dy_lower = ip.get(y_lower * _begin->cast<double>().array());
       const double dy_upper = ip.get(y_upper * _begin->cast<double>().array());
-      _J->y() += ((dy_lower - dy_upper) * 5e5);
+      _J->y() += ((dy_upper - dy_lower) * 5e5);
 
       const double dz_lower = ip.get(z_lower * _begin->cast<double>().array());
       const double dz_upper = ip.get(z_upper * _begin->cast<double>().array());
-      _J->z() += ((dz_lower - dz_upper) * 5e5);
+      _J->z() += ((dz_upper - dz_lower) * 5e5);
     }
 
     if (_H) {

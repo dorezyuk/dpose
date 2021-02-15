@@ -361,7 +361,7 @@ _interpolate(const cv::Mat& _image, const Eigen::Array2i& _lower,
 
 struct interpolator {
   interpolator(const cv::Mat& _image) :
-      image_(_image), bounds(image_.cols - 1, image_.rows - 1) {}
+      image_(_image), bounds(_image.cols - 1, _image.rows - 1) {}
 
   bool
   init(const Eigen::Array2d& k_cell) {
@@ -384,6 +384,7 @@ struct interpolator {
     // c_rel is the normalized point w.r.t a cell.
     // c_rel is defined in [0, 1]^2
     c_rel = k_cell.array() - k_upper.cast<double>() + 0.5;
+    c_rel = c_rel.array().max(0).min(1).matrix();
 
     // assert that all bounds are valid
     assert((c_rel.array() >= 0).all() && "bad relative index");
@@ -454,20 +455,15 @@ pose_gradient::get_cost(const pose& _se2, cell_vector::const_iterator _begin,
     if (_J) {
       const double dx_lower = ip.get(x_lower * _begin->cast<double>().array());
       const double dx_upper = ip.get(x_upper * _begin->cast<double>().array());
-      _J->x() += ((dx_lower - dx_upper) * 0.5 * 1e6);
+      _J->x() += ((dx_lower - dx_upper) * 5e5);
 
       const double dy_lower = ip.get(y_lower * _begin->cast<double>().array());
       const double dy_upper = ip.get(y_upper * _begin->cast<double>().array());
-      _J->y() += ((dy_lower - dy_upper) * 0.5 * 1e6);
+      _J->y() += ((dy_lower - dy_upper) * 5e5);
 
       const double dz_lower = ip.get(z_lower * _begin->cast<double>().array());
       const double dz_upper = ip.get(z_upper * _begin->cast<double>().array());
       _J->z() += ((dz_lower - dz_upper) * 5e5);
-
-      // for (size_t ii = 0; ii != 3; ++ii) {
-      //   _interpolate(data_.J.at(ii), k_lower, k_upper, m);
-      //   (*_J)(ii) += c_rel_x.transpose() * m * c_rel_y;
-      // }
     }
 
     if (_H) {

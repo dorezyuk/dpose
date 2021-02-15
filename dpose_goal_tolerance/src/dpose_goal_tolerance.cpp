@@ -502,7 +502,7 @@ DposeGoalTolerance::initialize(const std::string &_name, Map *_map) {
 // print the derivative test if running in debug
 //#ifndef NDEBUG
   solver_->Options()->SetStringValue("derivative_test", "first-order");
-  solver_->Options()->SetNumericValue("derivative_test_perturbation", 0.00001);
+  solver_->Options()->SetNumericValue("derivative_test_perturbation", 1e-6);
   solver_->Options()->SetNumericValue("point_perturbation_radius", 10);
 //#endif
 

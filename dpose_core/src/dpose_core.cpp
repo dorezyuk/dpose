@@ -381,8 +381,8 @@ pose_gradient::get_cost(const pose& _se2, cell_vector::const_iterator _begin,
     *_H = hessian::Zero();
 
   const transform_type k_to_m = m_to_k.inverse();
-  const Eigen::Array2d bounds(data_.core.get_data().cols,
-                              data_.core.get_data().rows);
+  const Eigen::Array2d bounds(data_.core.get_data().cols -1,
+                              data_.core.get_data().rows -1);
 
   Eigen::Array2d k_cell;
   Eigen::Array2i k_lower, k_upper;
@@ -399,7 +399,8 @@ pose_gradient::get_cost(const pose& _se2, cell_vector::const_iterator _begin,
     k_lower = k_upper - 1;
 
     // check if the interpolated points are valid
-    if ((k_lower < 0).any() || (k_upper >= bounds.cast<int>()).any())
+    // note: we need always an extra cell for the interpolation
+    if ((k_lower < 1).any() || (k_upper >= bounds.cast<int>()).any())
       continue;
 
     // c_rel is the normalized point w.r.t a cell.

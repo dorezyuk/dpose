@@ -29,7 +29,7 @@ struct rotation : public TestWithParam<double> {
   pose_gradient::jacobian J;
   cell_vector cells;
 
-  rotation() : se2(0, 0, GetParam()), pg(make_ship(), {10, false}) {
+  rotation() : se2(0, 0, GetParam()), pg(make_ship(), {10}) {
     // build the obstacle vector
     cells.reserve(20 * 20);
     for (size_t xx = 0; xx != 20; ++xx)

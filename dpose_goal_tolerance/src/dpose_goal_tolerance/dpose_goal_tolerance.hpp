@@ -62,8 +62,7 @@ using dpose_core::pose_gradient;
  * scaled by the squared distance between goal and start poses.
  *
  * Call first pose_regularization::get_cost and retrieve the corresponsing
- * Jacobian and Hessian via pose_regularization::get_jacobian and
- * pose_regularization::get_hessian().
+ * Jacobian via pose_regularization::get_jacobian().
  */
 struct pose_regularization {
   /// @param _weight_lin unscaled weight for the linear error
@@ -77,7 +76,7 @@ struct pose_regularization {
   void
   init(const pose &_start, const pose &_goal) noexcept;
 
-  /// @brief computes the cost, Jacobian and Hessian with respect to the _pose
+  /// @brief computes the cost and the Jacobian with respect to the _pose
   /// @param _pose current pose
   number
   get_cost(const pose &_pose) noexcept;
@@ -88,16 +87,9 @@ struct pose_regularization {
     return J_;
   }
 
-  /// @brief returns the current Hessian (from get_cost call)
-  inline const pose_gradient::hessian &
-  get_hessian() const noexcept {
-    return H_;
-  }
-
 private:
   // cache
   pose_gradient::jacobian J_;
-  pose_gradient::hessian H_;
   pose goal_;
   pose norm_;
   pose diff_;
@@ -132,7 +124,6 @@ private:
   // cache
   number cost_;                ///< cost of the current solution
   pose_gradient::jacobian J_;  ///< jacobian of the current solution
-  pose_gradient::hessian H_;   ///< hessian of the current solution
 
   // computation
   pose_gradient pg_;            ///< the pose-gradient object
@@ -140,7 +131,6 @@ private:
   cell_vector lethal_cells_;    ///< vector of lethal cells
 
   std::vector<pose_regularization> regs_;
-  bool compute_hessian_ = false;
 
   void
   on_new_x(index _n, const number *_x);
@@ -193,11 +183,6 @@ public:
              index _number_elem_jac, index *_i_row, index *_j_col,
              number *_jac_g) override;
 
-  bool
-  eval_h(index _n, const number *_x, bool _new_x, number _obj_factor, index _m,
-         const number *_lambda, bool _new_lambda, index _number_elem_hess,
-         index *_i_row, index *_j_col, number *_hess) override;
-
   void
   finalize_solution(Ipopt::SolverReturn _status, index _n, const number *_x,
                     const number *_z_L, const number *_z_U, index _m,
@@ -216,7 +201,6 @@ public:
  * See the README.md for more details.
  */
 struct DposeGoalTolerance : public gpp_interface::PrePlanningInterface {
-
   /// @brief will move the _goal pose out of collision
   /// @param _start current pose of the robot (won't be changed)
   /// @param _goal goal pose (subject to optimization)

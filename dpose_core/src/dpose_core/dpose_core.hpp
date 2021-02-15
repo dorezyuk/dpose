@@ -101,6 +101,13 @@ private:
   rectangle<int> box;  ///< the bounding box
 };
 
+/**
+ * @brief Implements bilinear interpolation
+ *
+ * Call first init() to fetch the cells of interest. Call then get to the get
+ * interpolated values. The functions are seperated to speedup the gradient
+ * computation which uses the same cell-data.
+ */
 struct interpolator {
   interpolator(const cv::Mat& _image);
 
@@ -127,12 +134,10 @@ struct pose_gradient {
   /// @brief POD defining the parameters
   struct parameter {
     unsigned int padding = 2;  ///< padding of the given footprint (in cells)
-    bool generate_hessian = false;
   };
 
   // the three arguments for get_pose
   using jacobian = Eigen::Vector3d;
-  using hessian = Eigen::Matrix3d;
   using pose = Eigen::Vector3d;
 
   /// @brief sets up internal data based on _footprint and _param.

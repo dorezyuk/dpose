@@ -37,7 +37,7 @@ make_cells() {
 static void
 perf_dpose_core(State& state) {
   // setup the pg struct
-  pose_gradient pg(make_arrow(), {3, true});
+  pose_gradient pg(make_arrow(), {3});
   pose_gradient::pose se2(0, 0, 0);
   pose_gradient::jacobian J;
 
@@ -51,7 +51,7 @@ perf_dpose_core(State& state) {
 static void
 perf_dpose_core_no_jacobian(State& state) {
   // setup the pg struct
-  pose_gradient pg(make_arrow(), {3, true});
+  pose_gradient pg(make_arrow(), {3});
   pose_gradient::pose se2(0, 0, 0);
 
   // setup the cells

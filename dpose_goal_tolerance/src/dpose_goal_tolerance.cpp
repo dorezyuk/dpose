@@ -71,11 +71,6 @@ pose_regularization::init(const pose &_start, const pose &_goal) noexcept {
   w_rot = weight_rot_ / std::max(w_rot, 1e-3);
   goal_ = _goal;
   norm_ = pose(w_lin, w_lin, w_rot);
-  // the hessian is a constant eye matrix of the form
-  // [[2 * w_lin, 0, 0],
-  //  [0, 2 * w_lin, 0],
-  //  [0, 0, 2 * w_rot]]
-  H_ = 2 * norm_.asDiagonal();
 }
 
 number
@@ -94,9 +89,7 @@ pose_regularization::get_cost(const pose &_pose) noexcept {
 }
 
 problem::problem(costmap &_map, const pose_gradient::parameter &_param) :
-    costmap_(&_map),
-    pg_(make_footprint(*_map.getLayeredCostmap()), _param),
-    compute_hessian_(_param.generate_hessian) {}
+    costmap_(&_map), pg_(make_footprint(*_map.getLayeredCostmap()), _param) {}
 
 void
 problem::on_new_x(index _n, const number *_x) {
@@ -104,31 +97,14 @@ problem::on_new_x(index _n, const number *_x) {
   const pose offset(_x[0], _x[1], _x[2]);
   const pose p = offset + pose_;
 
-  // reset the cost
-  cost_ = 0;
-  // apply the regularization for start and goal (if defined)
-  for (auto &reg : regs_)
-    cost_ += reg.get_cost(p);
-
   // query the data
-  if (compute_hessian_) {
-    // the case where we use the hessian
-    cost_ +=
-        pg_.get_cost(p, lethal_cells_.begin(), lethal_cells_.end(), &J_, &H_);
+  cost_ = pg_.get_cost(p, lethal_cells_.begin(), lethal_cells_.end(), &J_);
 
-    // assemble the hessian: flip the sign and add the hessians from the
-    // constraints.
-    H_ *= -1;
-    for (const auto &reg : regs_)
-      H_ += reg.get_hessian();
-  }
-  else
-    cost_ += pg_.get_cost(p, lethal_cells_.begin(), lethal_cells_.end(), &J_,
-                         nullptr);
-
-  // assemble the jacobian
-  for (const auto &reg : regs_)
+  // apply the regularization for start and goal (if defined)
+  for (auto &reg : regs_) {
+    cost_ += reg.get_cost(p);
     J_ += reg.get_jacobian();
+  }
 }
 
 void
@@ -139,7 +115,7 @@ problem::init(const pose &_start, const pose &_goal,
   rot_tol_sq_ = std::pow(_param.rot_tolerance, 2);
 
   // get the bounding box
-  const auto kernel_box = pg_.get_data().core.get_box();
+  const auto kernel_box = pg_.get_data().get_box();
 
   // get the max. thats a simplification to deal with rotations
   const auto max_coeff = kernel_box.array().abs().maxCoeff();
@@ -208,7 +184,6 @@ problem::get_nlp_info(index &_n, index &_m, index &_nonzero_jac_g,
   _n = 3;              // we optimize in se2
   _m = 2;              // contraints in translation and rotation
   _nonzero_jac_g = 3;  // we just have g0 / dx0, g0 / dy and g1 /dtheta
-  _nonzero_h_lag = 6;  // dense hessian with just lower half
   _index_style = C_STYLE;
   return true;
 }
@@ -300,48 +275,6 @@ problem::eval_jac_g(index _n, const number *_x, bool _new_x, index _m,
     std::copy_n(diff.data(), _number_elem_jac, _jac_g);
   }
 
-  return true;
-}
-
-bool
-problem::eval_h(index _n, const number *_x, bool _new_x, number _obj_factor,
-                index _m, const number *_lambda, bool _new_lambda,
-                index _number_elem_hess, index *_i_row, index *_j_col,
-                number *_hess) {
-  if (_new_x)
-    on_new_x(_n, _x);
-
-  index idx = 0;
-  if (!_hess) {
-    // define the ordering for the dense hessian. the order goes like
-    // 0
-    // 1 2
-    // 3 4 5
-    for (index row = 0; row != _n; ++row) {
-      for (index col = 0; col <= row; ++col, ++idx) {
-        _i_row[idx] = row;
-        _j_col[idx] = col;
-      }
-    }
-  }
-  else {
-    // g0 / (dx dx) = 2
-    // g0 / (dy dy) = 2
-    // g1 / (dtheta dtheta) = 2
-    // all other elements are zero
-    const pose diag(_lambda[0], _lambda[0], _lambda[1]);
-    const pose_gradient::hessian H_g = 2 * diag.asDiagonal();
-    const pose_gradient::hessian H_lag = _obj_factor * H_ + H_g;
-
-    // write the hessian into the output buffer
-    _hess[idx++] = H_lag(0, 0);  // lag / (dx dx)
-    _hess[idx++] = H_lag(1, 0);  // lag / (dy dx)
-    _hess[idx++] = H_lag(1, 1);  // lag / (dy dy)
-    _hess[idx++] = H_lag(2, 0);  // lag / (dtheta dx)
-    _hess[idx++] = H_lag(2, 1);  // lag / (dtheta dy)
-    _hess[idx++] = H_lag(2, 2);  // lag / (dtheta dtheta)
-  }
-  assert(idx == _number_elem_hess);
   return true;
 }
 
@@ -476,11 +409,6 @@ DposeGoalTolerance::initialize(const std::string &_name, Map *_map) {
   const int padding = nh.param("padding", 2);
   pose_gradient::parameter param;
   param.padding = static_cast<unsigned int>(std::max(padding, 0));
-  // the hessian from dpose is very noisy for most footprints and its better
-  // not to use it.
-  param.generate_hessian = nh.param("use_hessian", false);
-  if (param.generate_hessian)
-    DP_WARN_LOG("Hessian from dpose-core is very noisy");
 
   problem_ = new problem(*map_, param);
   solver_ = IpoptApplicationFactory();
@@ -492,17 +420,16 @@ DposeGoalTolerance::initialize(const std::string &_name, Map *_map) {
   load_ipopt_cfg(solver_, nh, "max_iter", 20);
   load_ipopt_cfg(solver_, nh, "max_cpu_time", .5);
 
-  // tell ipopt to use quasi-newtow method if we don't use the Hessian from
+  // tell ipopt to use quasi-newtow method since we don't use the Hessian from
   // dpose.
-  if (!param.generate_hessian)
-    solver_->Options()->SetStringValue("hessian_approximation",
-                                       "limited-memory");
-// print the derivative test if running in debug
-//#ifndef NDEBUG
-  solver_->Options()->SetStringValue("derivative_test", "first-order");
-  solver_->Options()->SetNumericValue("derivative_test_perturbation", 1e-6);
-  solver_->Options()->SetNumericValue("point_perturbation_radius", 10);
-//#endif
+  solver_->Options()->SetStringValue("hessian_approximation", "limited-memory");
+
+  // print the derivative test if required
+  if (nh.param("derivative_test", false)) {
+    solver_->Options()->SetStringValue("derivative_test", "first-order");
+    solver_->Options()->SetNumericValue("derivative_test_perturbation", 1e-6);
+    solver_->Options()->SetNumericValue("point_perturbation_radius", 10);
+  }
 
   pose_pub_ = nh.advertise<Pose>("filtered", 1);
 

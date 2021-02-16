@@ -84,7 +84,6 @@ struct Problem : public Ipopt::TNLP {
   set_origin(const Eigen::Vector3d &_x0) noexcept {
     x0_ = _x0;
     cost_best = std::numeric_limits<number>::max();
-
   }
 
   bool
@@ -113,11 +112,6 @@ struct Problem : public Ipopt::TNLP {
   eval_jac_g(index n, const number *x, bool new_x, index m, index nele_jac,
              index *iRow, index *jCol, number *values) override;
 
-  bool
-  eval_h(index n, const number *x, bool new_x, number obj_factor, index m,
-         const number *lambda, bool new_lambda, index nele_hess, index *iRow,
-         index *jCol, number *values) override;
-
   void
   finalize_solution(Ipopt::SolverReturn status, index n, const number *x,
                     const number *z_L, const number *z_U, index m,
@@ -144,9 +138,6 @@ private:
   std::vector<diff_drive::jacobian> R_hat;
   std::vector<pose_gradient::jacobian> J_hat;
   std::vector<Eigen::Matrix<number, 2, 1>> J_tilde;
-  std::vector<pose_gradient::hessian> H_hat;
-  std::vector<Eigen::Matrix<number, 3, 2>> C_hat;
-  std::vector<Eigen::Matrix<number, 2, 2>> D_hat;
   std::vector<Eigen::Vector2d> u_best;
 
   number cost;
@@ -155,14 +146,12 @@ private:
   pose_gradient pg_;
   Eigen::Vector3d x0_;
   std::vector<Eigen::Vector3d> x_;
-  costmap_2d::Costmap2DROS* map_ = nullptr;
+  costmap_2d::Costmap2DROS *map_ = nullptr;
 
   Parameter param_;
 };
 
-
 struct DposeRecovery : public nav_core::RecoveryBehavior {
-  // way too long...
   using Map = costmap_2d::Costmap2DROS;
 
   void

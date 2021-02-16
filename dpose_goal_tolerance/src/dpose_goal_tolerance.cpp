@@ -431,6 +431,10 @@ DposeGoalTolerance::initialize(const std::string &_name, Map *_map) {
     solver_->Options()->SetNumericValue("point_perturbation_radius", 10);
   }
 
+  auto status = solver_->Initialize();
+  if (status != Ipopt::Solve_Succeeded)
+    throw std::runtime_error("ipopt-initialization failed");
+
   pose_pub_ = nh.advertise<Pose>("filtered", 1);
 
   // setup the cfg-server

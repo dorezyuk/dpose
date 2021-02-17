@@ -1,3 +1,26 @@
+/*
+ * MIT License
+ *
+ * Copyright (c) 2021 Dima Dorezyuk
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+ */
 #include <dpose_core/dpose_costmap.hpp>
 #include <dpose_recovery/dpose_recovery.hpp>
 
@@ -15,9 +38,9 @@
 
 namespace dpose_recovery {
 
-Problem::Problem(costmap_2d::Costmap2DROS &_cm, const Parameter &_our_param,
+problem::problem(costmap_2d::LayeredCostmap &_cm, const Parameter &_our_param,
                  const pose_gradient::parameter &_param) :
-    pg_(dpose_core::make_footprint(*_cm.getLayeredCostmap()), _param),
+    pg_(dpose_core::make_footprint(_cm), _param),
     param_(_our_param),
     x_(_our_param.steps),
     R(_our_param.steps),
@@ -28,8 +51,12 @@ Problem::Problem(costmap_2d::Costmap2DROS &_cm, const Parameter &_our_param,
     u_best(_our_param.steps),
     map_(&_cm) {}
 
+problem::problem(costmap_2d::Costmap2DROS &_cm, const Parameter &_our_param,
+                 const pose_gradient::parameter &_param) :
+    problem(*_cm.getLayeredCostmap(), _our_param, _param) {}
+
 bool
-Problem::get_nlp_info(index &n, index &m, index &nnz_jac_g, index &nnz_h_lag,
+problem::get_nlp_info(index &n, index &m, index &nnz_jac_g, index &nnz_h_lag,
                       IndexStyleEnum &index_style) {
   // number of variables
   // dim_u should depend on the robot model (diff-drive vs omni-drive)
@@ -44,7 +71,7 @@ Problem::get_nlp_info(index &n, index &m, index &nnz_jac_g, index &nnz_h_lag,
 };
 
 bool
-Problem::get_bounds_info(index n, number *u_l, number *u_u, index m,
+problem::get_bounds_info(index n, number *u_l, number *u_u, index m,
                          number *g_l, number *g_u) {
   size_t ll = 0;
   size_t uu = 0;
@@ -62,7 +89,7 @@ Problem::get_bounds_info(index n, number *u_l, number *u_u, index m,
 };
 
 bool
-Problem::get_starting_point(index n, bool init_x, number *x, bool init_z,
+problem::get_starting_point(index n, bool init_x, number *x, bool init_z,
                             number *z_L, number *z_U, index m, bool init_lambda,
                             number *lambda) {
   for (index nn = 0; nn != n; ++nn)
@@ -120,7 +147,7 @@ get_bounding_box(index n, const number *u, pose _prev,
 }
 
 void
-Problem::on_new_u(index n, const number *u) {
+problem::on_new_u(index n, const number *u) {
   using state_t = Eigen::Vector3d;
   // we will throw otherwise
   if (!n)
@@ -174,7 +201,7 @@ Problem::on_new_u(index n, const number *u) {
 }
 
 bool
-Problem::eval_f(index n, const number *u, bool new_u, number &_cost) {
+problem::eval_f(index n, const number *u, bool new_u, number &_cost) {
   if (new_u)
     on_new_u(n, u);
   _cost = cost;
@@ -182,7 +209,7 @@ Problem::eval_f(index n, const number *u, bool new_u, number &_cost) {
 }
 
 bool
-Problem::eval_grad_f(index n, const number *u, bool new_u, number *grad_f) {
+problem::eval_grad_f(index n, const number *u, bool new_u, number *grad_f) {
   if (new_u)
     on_new_u(n, u);
 
@@ -224,18 +251,18 @@ Problem::eval_grad_f(index n, const number *u, bool new_u, number *grad_f) {
 };
 
 bool
-Problem::eval_g(index n, const number *x, bool new_x, index m, number *g) {
+problem::eval_g(index n, const number *x, bool new_x, index m, number *g) {
   return true;
 };
 
 bool
-Problem::eval_jac_g(index n, const number *x, bool new_x, index m,
+problem::eval_jac_g(index n, const number *x, bool new_x, index m,
                     index nele_jac, index *iRow, index *jCol, number *values) {
   return true;
 };
 
 void
-Problem::finalize_solution(Ipopt::SolverReturn status, index n, const number *x,
+problem::finalize_solution(Ipopt::SolverReturn status, index n, const number *x,
                            const number *z_L, const number *z_U, index m,
                            const number *g, const number *lambda,
                            number obj_value, const Ipopt::IpoptData *ip_data,
@@ -270,7 +297,7 @@ DposeRecovery::initialize(std::string _name, tf2_ros::Buffer *_tf,
                           Map *_global_map, Map *_local_map) {
   tf_ = _tf;
   map_ = _local_map;
-  Problem::Parameter param;
+  problem::Parameter param;
   ros::NodeHandle nh("~" + _name);
 
   param.steps = nh.param("steps", 10);
@@ -284,7 +311,7 @@ DposeRecovery::initialize(std::string _name, tf2_ros::Buffer *_tf,
   dpose_core::pose_gradient::parameter param2;
   param2.padding = nh.param("padding", 5);
 
-  problem_ = new Problem(*map_, param, param2);
+  problem_ = new problem(*map_, param, param2);
   solver_ = IpoptApplicationFactory();
 
   load_ipopt(solver_, nh, "tol", 5.);
@@ -313,7 +340,7 @@ DposeRecovery::initialize(std::string _name, tf2_ros::Buffer *_tf,
 
 void
 DposeRecovery::runBehavior() {
-  auto problem = dynamic_cast<Problem *>(problem_.operator->());
+  auto p = dynamic_cast<problem *>(problem_.operator->());
   geometry_msgs::PoseStamped robot_pose;
 
   const auto cm = map_->getLayeredCostmap()->getCostmap();
@@ -335,19 +362,17 @@ DposeRecovery::runBehavior() {
     pose.y() = (robot_pose.pose.position.y - origin_y) / res;
     pose.z() = tf2::getYaw(robot_pose.pose.orientation);
 
-    problem->set_origin(pose);
+    p->set_origin(pose);
 
     auto status = solver_->OptimizeTNLP(problem_);
 
-    const auto &u = problem->get_u();
+    const auto &u = p->get_u();
 
     std::vector<Eigen::Vector3d> x(u.size() + 1);
 
     x.front() = pose;
-    for (size_t ii = 0; ii != u.size(); ++ii) {
+    for (size_t ii = 0; ii != u.size(); ++ii)
       x.at(ii + 1) = diff_drive::step(x.at(ii), u.at(ii)(0), u.at(ii)(1));
-      // std::cout << x.at(ii + 1).transpose() << std::endl;
-    }
 
     // convert to array
     geometry_msgs::PoseArray pose_array;

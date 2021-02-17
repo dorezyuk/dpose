@@ -1,3 +1,26 @@
+/*
+ * MIT License
+ *
+ * Copyright (c) 2021 Dima Dorezyuk
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+ */
 #ifndef DPOSE_RECOVERY__DPOSE_RECVERY__HPP
 #define DPOSE_RECOVERY__DPOSE_RECVERY__HPP
 
@@ -23,11 +46,12 @@ using pose = pose_gradient::pose;
 
 namespace diff_drive {
 
+
 constexpr int x_dim = 3;
 constexpr int u_dim = 2;
 
-// where we pass u as input, and the initial x
 using u_vector = Eigen::Matrix<number, u_dim, 1>;
+using jacobian = Eigen::Matrix<number, x_dim, u_dim>;
 
 inline pose
 step(const pose &_x, const number &_u, const number &_w) noexcept {
@@ -39,7 +63,6 @@ step(const pose &_x, const number &_u, const number &_w) noexcept {
   return _x + x_d;
 }
 
-using jacobian = Eigen::Matrix<number, x_dim, u_dim>;
 
 inline void
 T_jacobian(const number &_theta_prev, jacobian &_T_curr) noexcept {
@@ -67,17 +90,18 @@ R_jacobian(const pose &_x_prev, const u_vector &_u_curr,
 
 }  // namespace diff_drive
 
-struct Problem : public Ipopt::TNLP {
+struct problem : public Ipopt::TNLP {
   struct Parameter {
     size_t steps;  ///< number of look a steps in the horizon
     size_t dim_u = 2;
-    size_t N;   ///< steps * dim_u
-    double dt;  ///< time resolution, must be positive
     Eigen::Vector2d u_lower;
     Eigen::Vector2d u_upper;
   };
 
-  Problem(costmap_2d::Costmap2DROS &_lcm, const Parameter &_our_param,
+  problem(costmap_2d::Costmap2DROS &_lcm, const Parameter &_our_param,
+          const pose_gradient::parameter &_param);
+
+  problem(costmap_2d::LayeredCostmap& _lcm, const Parameter &_our_param,
           const pose_gradient::parameter &_param);
 
   inline void
@@ -146,7 +170,7 @@ private:
   pose_gradient pg_;
   Eigen::Vector3d x0_;
   std::vector<Eigen::Vector3d> x_;
-  costmap_2d::Costmap2DROS *map_ = nullptr;
+  costmap_2d::LayeredCostmap *map_ = nullptr;
 
   Parameter param_;
 };

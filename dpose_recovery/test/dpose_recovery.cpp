@@ -34,12 +34,15 @@ struct costmap_fixture : public Test {
     map_.setFootprint(msg);
 
     // create a new problem
-    p_.reset(new problem{map_, {5, 2}, {5}});
+    p_.reset(new problem{map_, {10, 2}, {5}});
 
     // mark obstacles in the costmap
     auto cm = map_.getCostmap();
-    for (size_t ii = 0; ii < 200; ii += 20)
+    for (size_t ii = 0; ii < 200; ++ii) {
       cm->setCost(ii, 100, costmap_2d::LETHAL_OBSTACLE);
+      cm->setCost(ii, 105, costmap_2d::LETHAL_OBSTACLE);
+      cm->setCost(ii, 95, costmap_2d::LETHAL_OBSTACLE);
+    }
   }
 
   costmap_2d::LayeredCostmap map_;
@@ -50,16 +53,19 @@ TEST_F(costmap_fixture, init) {
   dpose_recovery::index n, m, nnz_jac_g, nnz_h_lag;
   Ipopt::TNLP::IndexStyleEnum index_style;
   ASSERT_TRUE(p_->get_nlp_info(n, m, nnz_jac_g, nnz_h_lag, index_style));
-  ASSERT_EQ(n, 10);
+  ASSERT_EQ(n, 20);
   ASSERT_EQ(m, 0);
   ASSERT_EQ(nnz_jac_g, 0);
 }
 
 TEST_F(costmap_fixture, grad) {
   // init the u_vector
-  const dpose_recovery::index N = 10;
-  std::vector<dpose_recovery::number> u_vector(N, 0.2);
+  const dpose_recovery::index N = 20;
+  std::vector<dpose_recovery::number> u_vector(N, 0.1);
   std::vector<dpose_recovery::number> grad_f_vector(N);
+
+  for (size_t ii = 0; ii != u_vector.size(); ++ii)
+    u_vector[ii] = 5;
 
   // set origin
   p_->set_origin(pose{100, 100, 0});
@@ -74,10 +80,22 @@ TEST_F(costmap_fixture, grad) {
   ASSERT_TRUE(p_->eval_grad_f(N, u_vector.data(), false, grad_f_vector.data()));
 
   // the gradient should not be zero, since we want to do some math
-  for(const auto& grad_f : grad_f_vector)
+  for (const auto& grad_f : grad_f_vector)
     ASSERT_NE(grad_f, 0);
 
-  // now compute the gradient manually
+  // now compute the gradient manually: linear part
+  dpose_recovery::number left_cost, right_cost;
+  for (size_t ii = 0; ii < u_vector.size(); ++ii) {
+    auto u_vector_disp = u_vector;
+    u_vector_disp[ii] += 1e-6;
+    ASSERT_TRUE(p_->eval_f(N, u_vector_disp.data(), true, right_cost));
+
+    u_vector_disp[ii] -= 2e-6;
+    ASSERT_TRUE(p_->eval_f(N, u_vector_disp.data(), true, left_cost));
+
+    const auto grad = (right_cost - left_cost) / 2e-6;
+    EXPECT_NEAR(grad, grad_f_vector[ii], 0.001);
+  }
 }
 
 int

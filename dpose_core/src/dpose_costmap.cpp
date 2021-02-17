@@ -128,6 +128,9 @@ lethal_cells_within(costmap_2d::Costmap2D &_map,
   // lock the costmap
   boost::unique_lock<boost::recursive_mutex> lock(*_map.getMutex());
   const auto char_map = _map.getCharMap();
+
+  // counting first the lethal cells and then writing them into the cell_vector
+  // is for the given perf-measurement the fastest way to go.
   for (const auto &ray : rays) {
     const auto &y = ray.first;
     // debug-asserts on the indices

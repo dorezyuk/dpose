@@ -74,7 +74,7 @@ TEST_P(rotation, y_grad) {
   const auto error = std::abs((diff - J.y()) / (diff ? diff : 1.));
 
   // we expect that we are "good enough"
-  EXPECT_LE(error, 0.02) << ": " << diff << " vs " << J.y();
+  EXPECT_LE(error, 0.001) << ": " << diff << " vs " << J.y();
 }
 
 }  // namespace

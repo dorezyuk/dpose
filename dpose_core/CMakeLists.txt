@@ -55,6 +55,7 @@ if(CATKIN_ENABLE_TESTING)
   catkin_add_gtest(${PROJECT_NAME}_test
     test/cost_data.cpp
     test/jacobian_data.cpp
+    test/lethal_cells_within.cpp
     test/pose_gradient.cpp)
 
   target_include_directories(${PROJECT_NAME}_test PUBLIC src)

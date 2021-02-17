@@ -30,7 +30,7 @@
 namespace dpose_core {
 
 polygon
-make_footprint(costmap_2d::LayeredCostmap& _cm) {
+make_footprint(costmap_2d::LayeredCostmap &_cm) {
   const auto res = _cm.getCostmap()->getResolution();
   // resolution cannot be zero otherwise we get device by zero issues
   if (res <= 0)
@@ -47,7 +47,7 @@ make_footprint(costmap_2d::LayeredCostmap& _cm) {
 }
 
 cell_vector
-raytrace(const cell& _begin, const cell& _end) noexcept {
+raytrace(const cell &_begin, const cell &_end) noexcept {
   // original code under raytraceLine in
   // https://github.com/ros-planning/navigation/blob/noetic-devel/costmap_2d/include/costmap_2d/costmap_2d.h
   const cell delta_raw = _end - _begin;
@@ -56,6 +56,11 @@ raytrace(const cell& _begin, const cell& _end) noexcept {
   cell::Index row_major, row_minor;
   const auto den = delta.maxCoeff(&row_major);
   const auto add = delta.minCoeff(&row_minor);
+
+  // this can happen if both are equal. then we can pick whats minor and whats
+  // major.
+  if (row_major == row_minor)
+    row_minor = 1 - row_major;
   const auto size = den;
 
   assert(size >= 0 && "negative size detected");
@@ -90,11 +95,11 @@ raytrace(const cell& _begin, const cell& _end) noexcept {
 }
 
 cell_rays
-to_rays(const rectangle<int>& _rect) noexcept {
+to_rays(const rectangle<int> &_rect) noexcept {
   cell_rays rays;
   for (int cc = 0; cc != 4; ++cc) {
     const auto ray = raytrace(_rect.col(cc), _rect.col(cc + 1));
-    for (const auto& cell : ray)
+    for (const auto &cell : ray)
       rays[cell.y()].extend(cell.x());
   }
   return rays;
@@ -129,13 +134,16 @@ lethal_cells_within(costmap_2d::Costmap2D &_map,
     assert(y >= 0 && "y index cannot be negative");
     assert(y < _map.getSizeInCellsY() && "y index out of bounds");
     assert(ray.second.min >= 0 && "x index cannot be negative");
-    assert(ray.second.max <= _map.getSizeInCellsX() && "x index out of bounds");
+    assert(ray.second.max < _map.getSizeInCellsX() && "x index out of bounds");
 
     const auto ii_end = _map.getIndex(ray.second.max + 1, y);
     // branchless formulation of "if(char_map[ii] == _value) {++count;}"
     for (auto ii = _map.getIndex(ray.second.min, y); ii != ii_end; ++ii)
       count += (char_map[ii] == costmap_2d::LETHAL_OBSTACLE);
   }
+
+  if (!count)
+    return {};
 
   // resize the final vector
   cell_vector cells(count);
@@ -162,6 +170,5 @@ lethal_cells_within(costmap_2d::Costmap2D &_map,
 
   return cells;
 }
-
 
 }  // namespace dpose_core

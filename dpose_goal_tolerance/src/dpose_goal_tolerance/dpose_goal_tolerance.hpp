@@ -50,7 +50,7 @@ using pose = Eigen::Matrix<number, 3, 1>;
 using dpose_core::pose_gradient;
 
 /**
- * @brief Additional cost generator penalizing the distance to the _goal.
+ * @brief Additional cost penalizing the distance to the _goal.
  *
  * The class implements the following cost
  * f0 = w_lin * ((x - x_g)^2 + (y - y_g)^2)

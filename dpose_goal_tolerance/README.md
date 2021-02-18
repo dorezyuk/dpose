@@ -133,4 +133,4 @@ If set to true, Ipopt will perform a derivative test.
 #### print_level (Int, 0)
 
 The print-level for Ipopt. The value can range between min (0) and max (12).
-See [print_lvel](https://coin-or.github.io/Ipopt/OPTIONS.html#OPT_Output) parameter for details.
+See [print_level](https://coin-or.github.io/Ipopt/OPTIONS.html#OPT_Output) parameter for details.

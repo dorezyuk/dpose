@@ -420,6 +420,8 @@ DposeGoalTolerance::initialize(const std::string &_name, Map *_map) {
   load_ipopt_cfg(solver_, nh, "output_file", "/tmp/ipopt.out");
   load_ipopt_cfg(solver_, nh, "max_iter", 20);
   load_ipopt_cfg(solver_, nh, "max_cpu_time", .5);
+  load_ipopt_cfg(solver_, nh, "print_level", 0);
+
 
   // tell ipopt to use quasi-newtow method since we don't use the Hessian from
   // dpose.

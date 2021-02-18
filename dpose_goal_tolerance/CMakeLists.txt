@@ -65,3 +65,15 @@ install(DIRECTORY src/${PROJECT_NAME}/
 )
 
 install(FILES plugin.xml DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION})
+
+#############
+## Testing ##
+#############
+
+if(CATKIN_ENABLE_TESTING)
+  find_package(rostest REQUIRED)
+
+  # ros-tests
+  add_rostest_gtest(${PROJECT_NAME}_gtest test/dpose_goal_tolerance.launch test/dpose_goal_tolerance.cpp)
+  target_link_libraries(${PROJECT_NAME}_gtest ${PROJECT_NAME})
+endif()

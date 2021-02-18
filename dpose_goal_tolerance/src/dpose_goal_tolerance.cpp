@@ -30,8 +30,6 @@
 #include <tf2/utils.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
 
-#include <boost/thread/lock_types.hpp>
-
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>

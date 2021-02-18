@@ -23,6 +23,8 @@
  */
 #include <dpose_core/dpose_costmap.hpp>
 
+#include <boost/thread/lock_types.hpp>
+
 #include <cassert>
 #include <numeric>
 #include <stdexcept>

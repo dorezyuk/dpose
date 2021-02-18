@@ -41,10 +41,10 @@ constexpr char _name[] = "[dpose_goal_tolerance]: ";
 
 // custom prints
 #define DP_DEBUG(args) ROS_DEBUG_STREAM(_name << args)
-#define DP_INFO_LOG(args) ROS_INFO_STREAM(_name << args)
-#define DP_WARN_LOG(args) ROS_WARN_STREAM(_name << args)
-#define DP_ERROR_LOG(args) ROS_ERROR_STREAM(_name << args)
-#define DP_FATAL_LOG(args) ROS_FATAL_STREAM(_name << args)
+#define DP_INFO(args) ROS_INFO_STREAM(_name << args)
+#define DP_WARN(args) ROS_WARN_STREAM(_name << args)
+#define DP_ERROR(args) ROS_ERROR_STREAM(_name << args)
+#define DP_FATAL(args) ROS_FATAL_STREAM(_name << args)
 
 namespace dpose_goal_tolerance {
 
@@ -332,14 +332,14 @@ bool
 DposeGoalTolerance::preProcess(Pose &_start, Pose &_goal) {
   // this class is a noop if both tolerances are zero
   if (param_.lin_tolerance <= 0 && param_.rot_tolerance <= 0) {
-    DP_INFO_LOG("class disabled");
+    DP_INFO("class disabled");
     return true;
   }
 
   // we will only have a valid costmap ptr, if DposeGoalTolerance::initialize
   // was called successfully.
   if (!map_) {
-    DP_WARN_LOG("not initialized");
+    DP_WARN("not initialized");
     return false;
   }
 
@@ -350,7 +350,7 @@ DposeGoalTolerance::preProcess(Pose &_start, Pose &_goal) {
     c_start = to_cell(_start, *map_);
   }
   catch (std::runtime_error &_ex) {
-    DP_WARN_LOG("cannot transform to cells: " << _ex.what());
+    DP_WARN("cannot transform to cells: " << _ex.what());
     return false;
   }
 
@@ -363,7 +363,7 @@ DposeGoalTolerance::preProcess(Pose &_start, Pose &_goal) {
     _goal.pose = to_msg(our_problem->get_pose(), *map_).pose;
   }
   catch (std::runtime_error &_ex) {
-    DP_WARN_LOG("cannot convert to message: " << _ex.what());
+    DP_WARN("cannot convert to message: " << _ex.what());
     return false;
   }
 
@@ -399,7 +399,7 @@ void
 DposeGoalTolerance::initialize(const std::string &_name, Map *_map) {
   // we cannot do anything if the costmap is invalid
   if (!_map) {
-    DP_FATAL_LOG("received a nullptr as map");
+    DP_FATAL("received a nullptr as map");
     return;
   }
 

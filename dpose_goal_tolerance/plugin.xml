@@ -1,0 +1,7 @@
+<class_libraries>
+  <library path="libdpose_goal_tolerance">
+    <class type="dpose_goal_tolerance::DposeGoalTolerance" base_class_type="gpp_interface::PrePlanningInterface">
+      <description>Goal-tolerancies for global-planners</description>
+    </class>
+  </library>
+</class_libraries>

@@ -1,0 +1,35 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>dpose_goal_tolerance</name>
+  <version>0.0.0</version>
+  <description>Goal-tolerancies for global-planners</description>
+
+  <maintainer email="dmitrij.dorezyuk@hotmail.de">Dima Dorezyuk</maintainer>
+
+  <license>MIT</license>
+
+  <buildtool_depend>catkin</buildtool_depend>
+
+  <depend>angles</depend>
+  <depend>dpose_core</depend>
+  <depend>dynamic_reconfigure</depend>
+  <depend>gpp_interface</depend>
+  <depend>pluginlib</depend>
+  <depend>tf2</depend>
+  <depend>tf2_geometry_msgs</depend>
+
+  <!-- non-ros-related libs -->
+  <depend>eigen</depend>
+  <depend>coinor-libipopt-dev</depend>
+  <!-- below required libs to use ipopt from package-config -->
+  <depend>gfortran</depend>
+  <depend>liblapack-dev</depend>
+  <depend>libblas-dev</depend>
+  <depend>pkg-config</depend>
+
+  <test_depend>rostest</test_depend>
+
+  <export>
+    <gpp_interface plugin="${prefix}/plugin.xml" />
+  </export>
+</package>

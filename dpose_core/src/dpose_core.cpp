@@ -100,6 +100,7 @@ _get_cost(const polygon& _fp, size_t& _padding) {
   cv::Mat outer(bb_size, cv::DataType<float>::type, cv::Scalar(0));
   cv::copyTo(edt, outer, image);
 
+  // todo make this a parameter
   outer *= -0.01;
   double min;
   cv::minMaxIdx(outer, &min);

@@ -64,8 +64,8 @@ TEST_F(costmap_fixture, grad) {
   std::vector<dpose_recovery::number> u_vector(N, 0.1);
   std::vector<dpose_recovery::number> grad_f_vector(N);
 
-  for (size_t ii = 0; ii != u_vector.size(); ++ii)
-    u_vector[ii] = 5;
+  for (size_t ii = 0; ii < u_vector.size(); ii += 2)
+    u_vector[ii] = 2;
 
   // set origin
   p_->set_origin(pose{100, 100, 0});
@@ -79,10 +79,6 @@ TEST_F(costmap_fixture, grad) {
   // now get the gradient from the lib
   ASSERT_TRUE(p_->eval_grad_f(N, u_vector.data(), false, grad_f_vector.data()));
 
-  // the gradient should not be zero, since we want to do some math
-  for (const auto& grad_f : grad_f_vector)
-    ASSERT_NE(grad_f, 0);
-
   // now compute the gradient manually: linear part
   dpose_recovery::number left_cost, right_cost;
   for (size_t ii = 0; ii < u_vector.size(); ++ii) {
@@ -94,7 +90,7 @@ TEST_F(costmap_fixture, grad) {
     ASSERT_TRUE(p_->eval_f(N, u_vector_disp.data(), true, left_cost));
 
     const auto grad = (right_cost - left_cost) / 2e-6;
-    EXPECT_NEAR(grad, grad_f_vector[ii], 0.001);
+    EXPECT_NEAR(grad, grad_f_vector[ii], 0.001) << "failed at " << ii;
   }
 }
 

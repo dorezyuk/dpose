@@ -171,7 +171,7 @@ problem::on_new_u(index n, const number *u) {
     // now get the jacobians of the current state T_ii and R_ii
     // note: at this step we safe R_ii into the R_hat_ii buffer
     diff_drive::T_jacobian(prev, T.at(ii));
-    diff_drive::R_jacobian(prev.z(), u[jj + 1], R_hat.at(ii));
+    diff_drive::R_jacobian(prev.z(), u[jj], R_hat.at(ii));
 
     // get the state x_n = A x_{n-1} + B u_n
     curr = diff_drive::step(prev, u[jj], u[jj + 1]);
@@ -309,7 +309,7 @@ DposeRecovery::initialize(std::string _name, tf2_ros::Buffer *_tf,
   param.u_lower = {-lin_vel, -rot_vel};
   param.u_upper = {lin_vel, rot_vel};
   dpose_core::pose_gradient::parameter param2;
-  param2.padding = nh.param("padding", 5);
+  param2.padding = nh.param("padding", 15);
 
   problem_ = new problem(*map_, param, param2);
   solver_ = IpoptApplicationFactory();
@@ -323,7 +323,7 @@ DposeRecovery::initialize(std::string _name, tf2_ros::Buffer *_tf,
   solver_->Options()->SetStringValue("hessian_approximation", "limited-memory");
 
   // print the derivative test if required
-  if (nh.param("derivative_test", true)) {
+  if (nh.param("derivative_test", false)) {
     solver_->Options()->SetStringValue("derivative_test", "first-order");
     solver_->Options()->SetNumericValue("derivative_test_perturbation", 1e-6);
     solver_->Options()->SetNumericValue("point_perturbation_radius", 10);
@@ -393,10 +393,8 @@ DposeRecovery::runBehavior() {
     geometry_msgs::Twist cmd_vel;
     cmd_vel.linear.x = u.front().x() * res;
     cmd_vel.angular.z = u.front().y();
-    for (size_t ii = 0; ii != 10; ++ii) {
-      cmd_vel_.publish(cmd_vel);
-      spin_rate.sleep();
-    }
+    cmd_vel_.publish(cmd_vel);
+    spin_rate.sleep();
 
     solver_->Options()->SetStringValue("warm_start_init_point", "yes");
   }

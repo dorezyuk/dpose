@@ -88,8 +88,11 @@ pose_regularization::get_cost(const pose &_pose) noexcept {
   return norm_.dot(diff_.array().pow(2).matrix());
 }
 
-problem::problem(costmap &_map, const pose_gradient::parameter &_param) :
-    costmap_(&_map), pg_(make_footprint(*_map.getLayeredCostmap()), _param) {}
+problem::problem(costmap_2d::LayeredCostmap &_map, const parameter &_param) :
+    costmap_(&_map), pg_(make_footprint(_map), _param) {}
+
+problem::problem(costmap_2d::Costmap2DROS &_map, const parameter &_param) :
+    problem(*_map.getLayeredCostmap(), _param) {}
 
 void
 problem::on_new_x(index _n, const number *_x) {

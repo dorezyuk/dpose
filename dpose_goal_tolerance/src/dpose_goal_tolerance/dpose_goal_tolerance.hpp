@@ -30,6 +30,7 @@
 
 #include <gpp_interface/pre_planning_interface.hpp>
 #include <costmap_2d/costmap_2d_ros.h>
+#include <costmap_2d/layered_costmap.h>
 #include <dynamic_reconfigure/server.h>
 
 #include <IpIpoptApplication.hpp>
@@ -114,7 +115,7 @@ private:
 struct problem : public Ipopt::TNLP {
 private:
   using cell_vector = dpose_core::cell_vector;
-  using costmap = costmap_2d::Costmap2DROS;
+  using parameter = pose_gradient::parameter;
 
   // input vars
   number lin_tol_sq_ = 1;  ///< squared linear tolerance in cells
@@ -126,9 +127,9 @@ private:
   pose_gradient::jacobian J_;  ///< jacobian of the current solution
 
   // computation
-  pose_gradient pg_;            ///< the pose-gradient object
-  costmap *costmap_ = nullptr;  ///< pointer to a costmap
-  cell_vector lethal_cells_;    ///< vector of lethal cells
+  pose_gradient pg_;                               ///< the pose-gradient object
+  costmap_2d::LayeredCostmap *costmap_ = nullptr;  ///< pointer to a costmap
+  cell_vector lethal_cells_;                       ///< vector of lethal cells
 
   std::vector<pose_regularization> regs_;
 
@@ -137,7 +138,8 @@ private:
 
 public:
   problem() = default;
-  problem(costmap &_map, const pose_gradient::parameter &_param);
+  problem(costmap_2d::Costmap2DROS &_map, const parameter &_param);
+  problem(costmap_2d::LayeredCostmap &_cmp, const parameter &_param);
 
   /// @brief init function which stets the poses and parameters
   /// @param _start current pose of the robot

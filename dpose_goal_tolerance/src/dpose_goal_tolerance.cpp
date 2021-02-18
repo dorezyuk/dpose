@@ -370,8 +370,10 @@ DposeGoalTolerance::preProcess(Pose &_start, Pose &_goal) {
   // publish the filtered pose
   if (status == Ipopt::Solve_Succeeded) {
     pose_pub_.publish(_goal);
-    return false;
+    return true;
   }
+
+  DP_WARN("optimization failed with " << status);
   return false;
 }
 

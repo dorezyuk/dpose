@@ -1,0 +1,147 @@
+
+/**
+@mainpage
+
+DposeRecovery implements a recovery behavior based on the output from the [dpose_core](../../../dpose_core) library.
+The idea is to formulate the recovery process as an MPC problem and use the [Ipopt](https://github.com/coin-or/Ipopt) library to solve it.
+
+@section Introduction
+
+Before diving into the implementation, we first introduce some basic concepts.
+The definitions below follow the standard nomenclature for robot control problems.
+The global pose of a robot at the timestep \f$ n \f$  is given by \f$ \textbf{x}_n = \begin{bmatrix}x_{n} & y_{n} & \theta_{n} \end{bmatrix}^T \f$.
+Here \f$ \theta \f$ is the angle of the robot with respect to the x-axis.
+Assuming a differential drive robot the control at the timestep \f$ n \f$ is defined by \f$ \textbf{u}_{n} = \begin{bmatrix} v_{n} & \omega_{n} \end{bmatrix}^T \f$. 
+Here \f$ v_{n} \f$ denotes the translational and \f$\omega_{n}\f$ the angular velocity. 
+The kinematic model of the robot is given by:
+\f[
+\begin{array}{rcl}
+    \textbf{x}_{n} & = & \textbf{x}_{n-1} +
+        \begin{bmatrix}
+            \cos(\theta_{n-1}) & 0\\
+            \sin(\theta_{n-1}) & 0\\
+            0 & 1
+        \end{bmatrix} \textbf{u}_{n} \\
+               & = & h(\textbf{u}_0, \dots, \textbf{u}_n, \textbf{x}_s)
+\end{array}
+\f]
+Since the equations above are recursive, we can write every pose \f$ \textbf{x}_{n} \f$ as a function \f$ h \f$ of all previously issued controls \f$ \textbf{u}_{k}, k \le n \f$ and the start pose \f$ \textbf{x}_s \f$.
+
+The cost of the robot at the pose \f$ \textbf{x}_{n} \f$ shall be \f$ f_{n}(\textbf{x}_n) \f$.
+This cost represents the cost in the sense of the `costmap_2d` framework.
+A higher cost implies that the robot is closer to obstacles.
+It should be intuitive that the cost \f$ f_n \f$ only depends on the pose \f$ \textbf{x}_n \f$.
+With the formula above we can write the cost \f$ f_n \f$ as a function of the controls \f$ \textbf{u}_k \f$ for \f$ k \le n \f$:
+\f[
+\begin{array}{rcl}
+f_{n} & = & f_{n}(\textbf{x}_n) \\
+      & = & f(h( \textbf{u}_0, \dots,\textbf{u}_n, \textbf{x}_s)) \\
+      & = & f_{n}(\textbf{u})
+\end{array}
+\f]
+
+The vector \f$ \textbf{u} \f$ contains all controls \f$ \textbf{u}_n \f$ for \f$ 0 \le n \le N \f$ stacked together: \f$ \textbf{u} = \begin{bmatrix} v_0, \omega_0, \dots \omega_N \end{bmatrix}^T\f$.
+\f$ N \f$ is the number of total steps in the trajectory or time horizon.
+The last equation states that the cost \f$ f_{n} \f$ is a function of **some** controls \f$ \textbf{u} \f$ and is a convenient abbreviation.
+The overall cost \f$ f \f$  of the entire trajectory is then given as the sum of the costs at each step:
+\f[
+f(\textbf{u})  =  \sum_{n}^{N} f_{n}(\textbf{u})
+\f]
+This cost depends on the sequence of control \f$ \textbf{u} \f$.
+We now formulate a MPC problem, where we want to find the sequence of controls \f$ \textbf{u} \f$ which minimizes the overall cost \f$ f( \textbf{u} ) \f$ of the trajectory.
+Typically the controls are bounded.
+After defining \f$ \textbf{u}_l \f$ as the lower and \f$ \textbf{u}_u \f$ as the upper limits for the commands \f$ \textbf{u} \f$ the final optimization can be formulated as
+
+\f[
+ \min_{\textbf{u}} f(\textbf{u}) \\
+s.t. \textbf{u}_{l} \le \textbf{u} \le \textbf{u}_u
+\f]
+
+@section Implementation
+@subsection Jacobian
+
+`Ipopt` will mostly solve the problem for us.
+All we need is to provide the Jacobian and the Hessian of the cost function \f$ f( \textbf{u} ) \f$ with respect to the control vector \f$ \textbf{u} \f$ (refer to the official `Ipopt` [documentation](https://coin-or.github.io/Ipopt/INTERFACES.html) for more details).
+The jacobian \f$ \nabla f( \textbf{u} ) \f$ has the following form:
+\f[
+    \nabla f =  \begin{bmatrix} \frac{\partial f}{\partial v_{0}} & \frac{\partial f}{\partial \omega_{0}} & \cdots & \frac{\partial f}{\partial \omega_{N}} \end{bmatrix}^T \\
+\f]
+Every command \f$ \textbf{u}_n \f$ can influence own cost \f$ f_n \f$ and the costs of succeeding steps.
+This is equivalent to saying the command \f$ \textbf{u}_n \f$ is an argument of all costs  \f$f_m \f$ for \f$ n \le m \le N \f$.
+The derivative of \f$ f(\textbf{u}) \f$ with respect to  \f$ \textbf{u}_n \f$ involves therefore also the cost terms \f$ f_m \f$ of the successor steps and is given by 
+\f[
+\frac{\partial f}{\partial \textbf{u}_n} = \sum_{m=n}^{N}\frac{\partial f_{m}}{\partial \textbf{u}_n}
+\f]
+The `dpose_core` library outputs the gradient of \f$ f_m \f$ with respect to \f$ \textbf{x}_m \f$.
+This vector shall be called \f$ J_m \f$.
+We can apply the chain-rule to get the desired data
+\f[
+\begin{array}{rcl}
+\frac{\partial f_m}{\partial \textbf{u}_n} & = & \frac{\partial f_m}{\partial \textbf{x}_m} \frac{\partial \textbf{x}_m}{\partial \textbf{u}_n} \\
+                                           & = & J_m \frac{\partial \textbf{x}_m}{\partial \textbf{u}_n} 
+\end{array}
+\f]
+The partial derivative of \f$ \textbf{x}_m \f$ with respect to \f$ \textbf{u}_n \f$ depends on the kinematic model.
+For the differential drive robot its given by
+\f[
+\begin{array}{rcl}
+    \frac{\partial \textbf{x}_m}{\partial \textbf{u}_n} & = &
+        \begin{bmatrix}
+            \cos(\theta_{n-1}) & 0 \\
+            \sin(\theta_{n-1})  & 0 \\
+            0 & 1
+        \end{bmatrix}
+        + \sum_{k=n+1}^{m}
+        \begin{bmatrix}
+            0 & - v_{k} \sin(\theta_{k - 1}) \\
+            0 & v_{k} \cos(\theta_{k-1}) \\
+            0 & 0
+        \end{bmatrix} \\
+    & = & T_{n} + \sum_{k=n+1}^{m} R_{k} \\
+    & = & A_{m, n}
+\end{array}
+\f]
+For the kinematic model of a differential drive robot (and also for the omnidirectional drive robot) the matrices can be separated into the translational part \f$ T_{n} \f$ and the rotational part \f$ R_k \f$.
+The translational part \f$ T_n \f$ depends only on the time step \f$ n \f$.
+The rotational part \f$ R_k \f$ is independent of \f$ n \f$ and depends only on the time steps \f$ k \f$ and \f$ k-1 \f$.
+Since \f$ R_k \f$ is constant in \f$ n \f$, we can cache those matrices.
+Now lets define the sum for all matrices \f$ R_k \f$ until the step \f$ m \f$ be denoted as \f$ \hat{R}_m \f$.
+\f[
+\begin{array}{rcl}
+    \hat{R}_m &=& \sum_{k=0}^{m} R_k \\
+    \hat{J}_m &=& \sum_{k=0}^{m} J_k \\
+\end{array}
+\f]
+Similarly, lets call the sum of the Jacobians \f$ J_k \f$ until the time step \f$ m \f$ \f$ \hat{J}_m \f$.
+The matrices \f$ \hat{R}_m \f$ and \f$ \hat{J}_m \f$ are also constant and can be cached.
+With the new matrix \f$ \hat{R}_m \f$ we can use the relation \f$ \sum_{k=n+1}^{m} R_k = \hat{R}_m - \hat{R}_n \f$ and
+remove the sum term from partial derivative of \f$ \textbf{x}_m \f$ with respect to \f$ \textbf{u}_n \f$:
+\f[
+A_{m, n} = T_n + (\hat{R}_m - \hat{R}_n)
+\f]
+The derivative of \f$ f(\textbf{u}) \f$ with respect to  \f$ \textbf{u}_n \f$ can be now written as
+\f[
+\begin{array}{rcl}
+\frac{\partial f}{\partial \textbf{u}_n} 
+&=& \sum_{m=n}^{N} A_{m, n}^T J_m \\
+&=& (T_n-\hat{R}_n)^T \sum_{m=n}^N J_m + \sum_{m=n}^N \hat{R}_m^T J_m
+\end{array}
+\f]
+Again, we can cache the sums since they are not dependent on the current time step \f$ n \f$.
+Lets introduce two final variables 
+\f[
+\begin{array}{rcl}
+\widetilde{J}_m &=& \sum_{k=0}^{m} \hat{R}_k^T J_k \\
+\widetilde{T}_n &=& T_n - \hat{R}_n
+\end{array}
+\f]
+Those variables don't have any particular meaning.
+We define them so we can cache during our computation.
+Additionally we will find that \f$ \widetilde{T}_n \f$ will be used for the computation of the Hessian.
+With the relations \f$ \sum_{k=n}^{N} J_k = \hat{J}_N - \hat{J}_{n-1} \f$ and \f$ \sum_{m=n}^N \hat{R}_m^T J_m = \widetilde{J}_N - \widetilde{J}_{n-1} \f$ we can rewrite the equation into 
+\f[
+\frac{\partial f}{\partial \textbf{u}_n} = \widetilde{T}_n^T (\hat{J}_N - \hat{J}_{n -1}) + (\widetilde{J}_N - \widetilde{J}_{n-1})
+\f]
+
+
+*/

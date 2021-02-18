@@ -1,0 +1,9 @@
+<library path="lib/libdpose_recovery">
+  <class name="dpose_recovery/DposeRecovery"
+         type="dpose_recovery::DposeRecovery"
+         base_class_type="nav_core::RecoveryBehavior">
+    <description>
+      Moves the robot away from lethal objects.
+    </description>
+  </class>
+</library>

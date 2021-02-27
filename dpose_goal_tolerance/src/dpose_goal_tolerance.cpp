@@ -369,6 +369,7 @@ DposeGoalTolerance::preProcess(Pose &_start, Pose &_goal) {
 
   // publish the filtered pose
   if (status == Ipopt::Solve_Succeeded) {
+    // todo add a verification step
     pose_pub_.publish(_goal);
     return true;
   }

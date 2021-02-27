@@ -1,4 +1,5 @@
 # the footprint for our example: a L-shaped robot.
+# adjust it to your needs to play around.
 footprint:
   [
     [0.5, 0.1],
@@ -60,14 +61,17 @@ GppPlugin:
 goal_tolerance:
   # positive integer adding some penalty to obstacles close to (but outside of)
   # the footprint.
-  padding: 4
+  padding: 2
   # termination criteria for Ipopt. see the libraries documentation for details.
   tol: 0.1
   max_iter: 500
-  max_cpu_time: 0.2
+  max_cpu_time: 1.0
   # since this is just a demo we increase the print-level to see what's actually
   # is going on.
   print_level: 5
+  # disable the weights to gear the solution towards the current robot pose
+  weight_start_lin: 0
+  weight_start_rot: 0
 
 # disable the patience logic and the recoveries, since we don't want to loop
 # here (remember: we will always fail because there is no planner loaded under

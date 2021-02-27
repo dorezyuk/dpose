@@ -24,9 +24,9 @@ def get_trans_vector(pose: PoseStamped):
 class FootprintTransformer(object):
 
     def __init__(self):
-        self.footprint = rospy.get_param("/footprint")
+        self.footprint = rospy.get_param("/move_base_node/footprint")
         self.sub = rospy.Subscriber(
-            "/navigation/move_base_flex/dpose_goal_tolerance/filtered", PoseStamped, self.pose_callback, queue_size=1)
+            "/move_base_node/goal_tolerance/filtered", PoseStamped, self.pose_callback, queue_size=1)
         self.pub = rospy.Publisher("filtered", PolygonStamped, queue_size=1)
 
     def pose_callback(self, msg: PoseStamped):

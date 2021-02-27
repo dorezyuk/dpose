@@ -69,13 +69,13 @@ catkin build dpose_goal_tolerance
 
 The subsequent topics and  parameters are defined within the namespace `~/name`, where `name` is the name under which this plugin is loaded.
 
-### Publications
+### Topics
 
 #### filtered ([geometry_msgs::PoseStamped](http://docs.ros.org/en/noetic/api/geometry_msgs/html/msg/PoseStamped.html))
 
 Debug topic which will publish the displaced goal pose.
 
-### Topics
+### Parameters
 
 #### padding (Int, 2)
 

@@ -1,0 +1,30 @@
+<!--
+    This file show-cases the library with a small example.
+    Adjust the footprint in config.yaml to match your robot.
+    You can use RVIZ to send navigation goals and to play around.
+    For introspection configure RVIZ to visualize
+        - /move_base_node/global_costmap/costmap the global costmap
+        - /move_base_node/current_goal the current goal
+        - /move_base_node/goal_tolerance/filtered the output from the optimization
+    Launch additianlly the doc/footprint_transformer.py to visualize the displaced footprint.
+ -->
+<launch>
+    <!--
+        We don't need any simulator for our example.
+        We fake the localization with a static transform.
+     -->
+    <node name="transform" pkg="tf" type="static_transform_publisher" output="screen" args="0 0 0 0 0 0 map base_link 10"/>
+
+    <!-- 
+        Launch the map-server with a small map.
+     -->
+    <node name="map_server" pkg="map_server" type="map_server" args="$(find dpose_goal_tolerance)/example/example_map.yaml" />
+
+    <!-- 
+        The move-base node with our custom configuration.
+        The node will not generate any plan.
+     -->
+    <node pkg="move_base" type="move_base" respawn="false" name="move_base_node" output="screen">
+        <rosparam file="$(find dpose_goal_tolerance)/example/example.yaml" command="load"/>
+    </node>
+</launch>

@@ -1,0 +1,76 @@
+# the footprint for our example: a L-shaped robot.
+footprint:
+  [
+    [0.5, 0.1],
+    [-0.5, -0.1],
+    [-0.4, -0.8],
+    [-0.3, -0.75],
+    [-0.3, -0.25],
+    [0.5, -0.1],
+  ]
+
+# configure the global costmap. for this example we only need this map, since
+# our goal tolerance works only on the global map.
+global_costmap:
+  # global_frame and robot_base_frame follow the ros-standard. we will use a
+  # static_transform_publisher within the launch-file to create a fake
+  # localization.
+  global_frame: map
+  robot_base_frame: base_link
+  update_frequency: 1.0
+  publish_frequency: 1.0
+  # mark the costmap as static.
+  rolling_window: false
+  # disable all plugins but the static_layer: since we don't have a simulator
+  # running, there isn't any sensor data to subscribe.
+  plugins:
+    - { name: static_layer, type: "costmap_2d::StaticLayer" }
+
+# the local_costmap is not used in this example. we disable all layers but the
+# static_layer.
+local_costmap:
+  rolling_window: true
+  width: 5.0
+  height: 5.0
+  plugins:
+    - { name: static_layer, type: "costmap_2d::StaticLayer" }
+
+# load the gpp_plugin as the global_planner plugin
+base_global_planner: "gpp_plugin::GppPlugin"
+
+# now configure the gpp_plugin to use the goal-tolerance. since we cannot drive
+# (there is no simulator), we don't provide any real planners and configure the
+# gpp-plugin to return failure.
+GppPlugin:
+  # our goal-tolerance: on_failure_break would is a reasonable setting in
+  # practice since we don't want to start planning if we cannot find a free pose
+  # within the allowed search radius.
+  pre_planning:
+    - {
+        name: goal_tolerance,
+        type: dpose_goal_tolerance::DposeGoalTolerance,
+        on_failure_break: true,
+      }
+  # the default values are returned if no on_<failure|success>_break criteria
+  # was triggered
+  pre_planning_default_value: true
+  planning_default_value: false
+
+# finally configure the goal-tolerance itself.
+goal_tolerance:
+  # positive integer adding some penalty to obstacles close to (but outside of)
+  # the footprint.
+  padding: 4
+  # termination criteria for Ipopt. see the libraries documentation for details.
+  tol: 0.1
+  max_iter: 500
+  max_cpu_time: 0.2
+  # since this is just a demo we increase the print-level to see what's actually
+  # is going on.
+  print_level: 5
+
+# disable the patience logic and the recoveries, since we don't want to loop
+# here (remember: we will always fail because there is no planner loaded under
+# GppPluign:planning)
+planner_patience: 0.0
+recovery_behaviors: []

@@ -1,0 +1,20 @@
+<launch>
+    <!--
+        We don't need any simulator for our example.
+        In order to launch the example we will just assume a static robot
+     -->
+    <node name="transform" pkg="tf" type="static_transform_publisher" output="screen" args="0 0 0 0 0 0 map base_link 10"/>
+
+    <!-- 
+        Launch the map-server with a small map.
+     -->
+    <node name="map_server" pkg="map_server" type="map_server" args="$(find dpose_goal_tolerance)/example/example_map.yaml" />
+
+    <!-- 
+        The move-base node with our custom configuration.
+        The node will not generate any plan.
+     -->
+    <node pkg="move_base" type="move_base" respawn="false" name="move_base_node" output="screen">
+        <rosparam file="$(find dpose_goal_tolerance)/example/example.yaml" command="load"/>
+    </node>
+</launch>

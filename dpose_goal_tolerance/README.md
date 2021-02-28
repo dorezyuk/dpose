@@ -17,7 +17,7 @@ The right gif shows the functionality for a banana-shaped robot.
 ## Implementation
 
 The library is build on top of [DposeCore](../dpose_core).
-DposeCore outputs the collision costs, Jacobian of that cost and Hessian of the cost for a given polygonal footprint.
+DposeCore outputs the collision costs and its Jacobian for a given polygonal footprint.
 With this values the formulation of the optimization problem is straight forward:
 ```
 min(f(x,y,theta))

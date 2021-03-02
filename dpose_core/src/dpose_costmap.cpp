@@ -25,9 +25,15 @@
 
 #include <boost/thread/lock_types.hpp>
 
+#include <algorithm>
+#include <array>
 #include <cassert>
+#include <iterator>
+#include <map>
+#include <memory>
 #include <numeric>
 #include <stdexcept>
+#include <vector>
 
 namespace dpose_core {
 
@@ -69,7 +75,8 @@ raytrace(const cell &_begin, const cell &_end) noexcept {
 
   int num = den / 2;
 
-  // setup the increments
+  // setup the increments. note Eigen's signum returns zero if the argument is
+  // zero.
   cell inc_minor = delta_raw.array().sign();
   cell inc_major = inc_minor;
 
@@ -174,6 +181,287 @@ lethal_cells_within(costmap_2d::Costmap2D &_map,
   assert(dd_iter == cells.end() && "bad index: dd_iter");
 
   return cells;
+}
+
+bool
+is_inside(const costmap_2d::Costmap2D &_map,
+          const polygon &_footprint) noexcept {
+  // get the size of the costmap
+  const Eigen::Array2i size(_map.getSizeInCellsX(), _map.getSizeInCellsY());
+
+  const int cols = _footprint.cols();
+  for (int cc = 0; cc != cols; ++cc) {
+    const Eigen::Array2i point = _footprint.col(cc).array();
+    if ((point < 0).any() || (point >= size).any())
+      return false;
+  }
+  return true;
+}
+
+namespace detail {
+
+x_minor_bresenham::x_minor_bresenham(const cell &c0, const cell &c1) {
+  cell diff;
+
+  // we start at the vertex with the lowest y value.
+  if (c0.y() < c1.y()) {
+    x_curr = c0.x();
+    diff = c1 - c0;
+  }
+  else {
+    x_curr = c1.x();
+    diff = c0 - c1;
+  }
+  // step one step back so we can cleanly start with the iteration
+  x_curr -= 1;
+
+  // init the bresenham's members
+  x_sign = diff.array().sign().x();
+  den = diff.array().abs().y();
+  add = diff.array().abs().x();
+  num = den / 2;
+}
+
+int
+x_minor_bresenham::get_next() noexcept {
+  num += add;
+  if (num >= den) {
+    num -= den;
+    x_curr += x_sign;
+  }
+
+  assert(num < den && "bresenham failed");
+  return x_curr;
+}
+
+x_major_bresenham::x_major_bresenham(const cell &c0, const cell &c1) :
+    x_minor_bresenham(c0, c1) {
+  // major axis is now x
+  std::swap(add, den);
+
+  // the diff underestimates the slope
+  const int diff = den / add;
+  n_incr = diff * add;
+  x_incr = n_incr * x_sign;
+}
+
+int
+x_major_bresenham::get_next() noexcept {
+  num += n_incr;
+  x_curr += x_incr;
+  // check if we need to add another step to reach den
+  if (num < den) {
+    num += add;
+    x_curr += x_sign;
+  }
+
+  assert(num >= den && "logic error");
+  num -= den;
+  assert(num < den && "logic error");
+  return x_curr;
+}
+
+}  // namespace detail
+
+x_bresenham::x_bresenham(const cell &_c0, const cell &_c1) noexcept {
+  const cell diff = (_c1 - _c0).array().abs();
+  if (diff.x() > diff.y())
+    impl_ = std::make_unique<detail::x_major_bresenham>(_c0, _c1);
+  else
+    impl_ = std::make_unique<detail::x_minor_bresenham>(_c0, _c1);
+}
+
+struct line {
+  line(const cell &_begin, const cell &_end) :
+      lower(_begin), upper(_end), impl_(_begin, _end) {}
+  cell lower, upper;
+
+  inline int
+  get_x_value(int y) noexcept {
+    return impl_.get_next();
+  }
+
+private:
+  x_bresenham impl_;
+};
+
+/**
+ * @brief helper function for the scan-line algorithm.
+ *
+ * Function iterates over the _maps cells within a scan-line defined by the
+ * index yy. It returns true, if no cell has the value _cost.
+ *
+ * @param _map The costmap.
+ * @param _lines Currently active lines. The size must be even.
+ * @param yy The index of the scan-line
+ * @param _cost The searched cost.
+ */
+bool
+check_line(const costmap_2d::Costmap2D &_map,
+           const std::map<int, line *> &_lines, int yy, uint8_t _cost) {
+  // no need to bother on an empty set.
+  if (_lines.empty())
+    return true;
+
+  // check the input quality - we need an even size because we swipe between the
+  // left and right lines.
+  assert(_lines.size() % 2 == 0 && "lines.size() must be even");
+
+  // iterate pair-wise within the active-lines. the active lines are sorted
+  // by the x-value.
+  auto raw_map = _map.getCharMap();
+  for (auto r_line = std::next(_lines.begin()); r_line != _lines.end();
+       std::advance(r_line, 2)) {
+    const auto l_line = std::prev(r_line);
+    // get the x-values
+    const auto r_x = r_line->second->get_x_value(yy) + 1;
+    const auto l_x = l_line->second->get_x_value(yy);
+
+    // swipe throught the raw costmap.
+    const auto r_index = raw_map + _map.getIndex(r_x, yy);
+    auto l_index = raw_map + _map.getIndex(l_x, yy);
+    for (; l_index != r_index; ++l_index) {
+      if (*l_index == _cost)
+        return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * @brief implements a check if a line or point footprint covers a cell with the
+ * value _cost.
+ *
+ * The _footprint must have less then three vertices: it may be empty, a point
+ * or a line. The function will check if any cell covered by the footprint has
+ * the value _cost. If such cell exists, it returns false.
+ *
+ * @param _map The costmap.
+ * @param _footprint The footprint (defined by vertices in cell coordinates).
+ * @param _cost The interesting cost.
+ */
+bool
+check_without_area(const costmap_2d::Costmap2D &_map, const polygon &_footprint,
+                   uint8_t _cost) noexcept {
+  // get the number of vertices
+  const auto cols = _footprint.cols();
+
+  // setup the check lambda
+  auto is_good = [&](const cell __cell) {
+    return _map.getCost(__cell.x(), __cell.y()) != _cost;
+  };
+
+  switch (cols) {
+    case 0: {
+      // an empty footprint
+      return true;
+    }
+    case 1: {
+      // a point-footprint
+      return is_good(_footprint.col(0));
+    }
+    case 2: {
+      // a line-footprint
+      const auto cells = raytrace(_footprint.col(0), _footprint.col(1));
+      return std::all_of(cells.begin(), cells.end(), is_good);
+    }
+    default: {
+      assert(false && "footprint defines an area");
+      return false;
+    }
+  }
+}
+
+bool
+check_footprint(const costmap_2d::Costmap2D &_map, const polygon &_footprint,
+                uint8_t _cost) {
+  // check if all vertices are within the costmap
+  if (!is_inside(_map, _footprint))
+    return false;
+
+  const auto cols = _footprint.cols();
+  // if we have less then tree vertices we don't have an area defined.
+  if (cols < 3)
+    return check_without_area(_map, _footprint, _cost);
+
+  // we are now certain that we have a polygon and will implement the scan-line
+  // algorithm below.
+
+  // the footprint might be closed. in this case we can skip the last vertex,
+  // since it does not add any information.
+  const auto is_closed =
+      static_cast<int>(_footprint.col(cols - 1) == _footprint.col(0));
+
+  // convert the footprint into lines. a line is defined by two adjacent
+  // vertices. assume we have the vertices [a, b, c] (or the closed variant [a,
+  // b, c, a]). our edges will be [[a, b], [b, c], [c, a]].
+  std::vector<line> lines;
+  lines.reserve(cols - is_closed);
+  for (int cc = 1; cc != cols; ++cc) {
+    // the scan-line algorithm is allergic to horizontal lines; so we skip them.
+    if (_footprint(1, cc - 1) != _footprint(1, cc))
+      lines.emplace_back(_footprint.col(cc - 1), _footprint.col(cc));
+  }
+  if (!is_closed && _footprint(1, cols - 1) != _footprint(1, 0))
+    lines.emplace_back(_footprint.col(cols - 1), _footprint.col(0));
+
+  // create a height map of the vertices mappint the y-value of vertex to its
+  // two adjacent edges. assume we have the vertices [a, b, c] and have
+  // generated the edges [[a, b], [b, c], [c, a]] which we call [A, B, C]. our
+  // map then contains {a.y: [C, A], b.y: [A, B], c.y: [B, C]}.
+  using vertex = std::array<line *, 2>;
+  std::multimap<int, vertex> vertex_set;
+  // add the first
+  vertex_set.emplace(lines.front().lower.y(),
+                     vertex{&lines.back(), &lines.front()});
+  // add all remaining
+  for (auto l_line = lines.begin(), r_line = std::next(l_line);
+       r_line != lines.end(); ++l_line, ++r_line)
+    vertex_set.emplace(r_line->lower.y(), vertex{&(*l_line), &(*r_line)});
+
+  // as typical in scan-line algorithm we maintian a set of active lines: the
+  // lines are intersected by the current y-value. we sort them by their
+  // x-value of the lower vertex of the line (from left to right).
+  std::map<int, line *> active_lines;
+
+  // get the y-range of the polygon. since the costmap_2d is row-major, we will
+  // iterate within a row in our main loop.
+  const auto y_max = _footprint.row(1).maxCoeff() + 1;
+  auto next_vertex = vertex_set.begin();
+  // assume our vertice are [a, b, c] and have the following coordinates
+  // - a: (0, 0)
+  // - b: (5, 1)
+  // - c: (-1, 2)
+
+  for (auto yy = _footprint.row(1).minCoeff() - 1; yy != y_max; ++yy) {
+    // our active line set changes only on vertices. we can hence use the
+    // current line set until we reach the next vertex.
+    for (; yy != next_vertex->first; ++yy)
+      if (!check_line(_map, active_lines, yy, _cost))
+        return false;
+
+    assert(yy <= y_max && "yy out of range");
+
+    // we have reached the next_vertex. we remove ending lines form and add new
+    // lines to the active set. we iterate until we reach a vertex with a bigger
+    // y value, since multiple vertices may be located at the current scan line.
+    for (; next_vertex->first == yy; ++next_vertex) {
+      for (const auto &line : next_vertex->second) {
+        // a line starts, if both if its vertices are equal or above the current
+        // scan-line.
+        if (line->lower.y() >= yy && line->upper.y() >= yy) {
+          assert(active_lines.find(line->lower.x() == active_lines.end() &&
+                                   "duplicate x-value"));
+          active_lines.emplace(line->lower.x(), line);
+        }
+        else
+          active_lines.erase(line->lower.x());
+      }
+    }
+    assert(next_vertex != lines.end() && "reached lines.end()");
+    assert(next_vertex.first > yy && "misordered vertices");
+  }
+  return true;
 }
 
 }  // namespace dpose_core

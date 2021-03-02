@@ -81,8 +81,69 @@ to_rays(const cell_rectangle& _rect) noexcept;
 /// @param _map the costmap
 /// @param _bounds box in cell-space defining the ROI
 cell_vector
-lethal_cells_within(costmap_2d::Costmap2D &_map,
-                    const cell_rectangle &_bounds);
+lethal_cells_within(costmap_2d::Costmap2D& _map, const cell_rectangle& _bounds);
+
+/// @brief checks if the _footprint is entirely inside the _map.
+/// @param _map the costmap.
+/// @param _footprint the footprint (in cell-space).
+bool
+is_inside(const costmap_2d::Costmap2D& _map,
+          const polygon& _footprint) noexcept;
+
+namespace detail {
+
+/**
+ * @brief Special implementation for x_bresenham, where delta in x is smaller
+ * then delta in y.
+ */
+struct x_minor_bresenham {
+  x_minor_bresenham(const cell& c0, const cell& c1);
+
+  virtual int
+  get_next() noexcept;
+
+protected:
+  int x_curr, x_sign, den, add, num;
+};
+
+/**
+ * @brief Special implementation for x_bresenham, where delta in x is larger
+ * then delta in y.
+ */
+struct x_major_bresenham : public x_minor_bresenham {
+  x_major_bresenham(const cell& c0, const cell& c1);
+
+  int
+  get_next() noexcept final;
+
+private:
+  int n_incr, x_incr;
+};
+
+}  // namespace detail
+
+/**
+ * @brief Implements the bresenham-raytracing algorithm such that the get_next()
+ * method will always yield the next x-value on a line.
+ *
+ * The sequence will start with the x-value of the given vertex which has the
+ * lowerst y-value.
+ */
+struct x_bresenham {
+  x_bresenham(const cell& _c0, const cell& _c1) noexcept;
+
+  inline int
+  get_next() noexcept {
+    return impl_->get_next();
+  }
+
+private:
+  std::unique_ptr<detail::x_minor_bresenham> impl_;
+};
+
+bool
+check_footprint(const costmap_2d::Costmap2D& _map, const polygon& _footprint,
+                uint8_t _cost);
 
 }  // namespace dpose_core
 

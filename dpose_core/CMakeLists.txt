@@ -53,6 +53,7 @@ install(DIRECTORY src/${PROJECT_NAME}/
 if(CATKIN_ENABLE_TESTING)
   find_package(rostest)
   catkin_add_gtest(${PROJECT_NAME}_test
+    test/check_footprint.cpp
     test/cost_data.cpp
     test/jacobian_data.cpp
     test/lethal_cells_within.cpp

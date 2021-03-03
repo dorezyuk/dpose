@@ -212,18 +212,20 @@ x_minor_bresenham::x_minor_bresenham(const cell &c0, const cell &c1) {
     x_curr = c1.x();
     diff = c0 - c1;
   }
-  // step one step back so we can cleanly start with the iteration
-  x_curr -= 1;
 
   // init the bresenham's members
   x_sign = diff.array().sign().x();
   den = diff.array().abs().y();
   add = diff.array().abs().x();
+
   num = den / 2;
 }
 
 int
 x_minor_bresenham::get_next() noexcept {
+  assert(den >= add && "bad bresenham");
+
+  const auto x_buff = x_curr;
   num += add;
   if (num >= den) {
     num -= den;
@@ -231,24 +233,25 @@ x_minor_bresenham::get_next() noexcept {
   }
 
   assert(num < den && "bresenham failed");
-  return x_curr;
+  return x_buff;
 }
 
 x_major_bresenham::x_major_bresenham(const cell &c0, const cell &c1) :
     x_minor_bresenham(c0, c1) {
   // major axis is now x
   std::swap(add, den);
-
-  // the diff underestimates the slope
-  const int diff = den / add;
-  n_incr = diff * add;
-  x_incr = n_incr * x_sign;
+  num = den / 2;
 }
 
 int
 x_major_bresenham::get_next() noexcept {
-  num += n_incr;
-  x_curr += x_incr;
+  assert(den >= add && "bad bresenham");
+
+  const auto x_buff = x_curr;
+  const auto diff = den - num;
+  const int step = diff / add;
+  num += (step * add);
+  x_curr += (step * x_sign);
   // check if we need to add another step to reach den
   if (num < den) {
     num += add;
@@ -258,7 +261,7 @@ x_major_bresenham::get_next() noexcept {
   assert(num >= den && "logic error");
   num -= den;
   assert(num < den && "logic error");
-  return x_curr;
+  return x_buff;
 }
 
 }  // namespace detail
@@ -450,16 +453,16 @@ check_footprint(const costmap_2d::Costmap2D &_map, const polygon &_footprint,
         // a line starts, if both if its vertices are equal or above the current
         // scan-line.
         if (line->lower.y() >= yy && line->upper.y() >= yy) {
-          assert(active_lines.find(line->lower.x() == active_lines.end() &&
-                                   "duplicate x-value"));
+          assert(active_lines.find(line->lower.x()) == active_lines.end() &&
+                 "duplicate x-value");
           active_lines.emplace(line->lower.x(), line);
         }
         else
           active_lines.erase(line->lower.x());
       }
     }
-    assert(next_vertex != lines.end() && "reached lines.end()");
-    assert(next_vertex.first > yy && "misordered vertices");
+    assert(next_vertex != vertex_set.end() && "reached lines.end()");
+    assert(next_vertex->first > yy && "misordered vertices");
   }
   return true;
 }

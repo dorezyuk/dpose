@@ -115,9 +115,6 @@ struct x_major_bresenham : public x_minor_bresenham {
 
   int
   get_next() noexcept final;
-
-private:
-  int n_incr, x_incr;
 };
 
 }  // namespace detail

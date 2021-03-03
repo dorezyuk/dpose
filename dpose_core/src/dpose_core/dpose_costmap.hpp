@@ -102,8 +102,20 @@ struct x_minor_bresenham {
   virtual int
   get_next() noexcept;
 
+  inline int
+  get_curr() const noexcept {
+    return x_curr;
+  }
+
+  inline double
+  get_dx() const noexcept {
+    return dx;
+  }
+
+
 protected:
   int x_curr, x_sign, den, add, num;
+  double dx;
 };
 
 /**
@@ -128,10 +140,22 @@ struct x_major_bresenham : public x_minor_bresenham {
  */
 struct x_bresenham {
   x_bresenham(const cell& _c0, const cell& _c1) noexcept;
+  x_bresenham(const x_bresenham& _other) :
+      impl_(std::make_unique<detail::x_minor_bresenham>(*_other.impl_)) {}
 
   inline int
   get_next() noexcept {
     return impl_->get_next();
+  }
+
+  inline int
+  get_curr() const noexcept {
+    return impl_->get_curr();
+  }
+
+  inline double
+  get_dx() const noexcept {
+    return impl_->get_dx();
   }
 
 private:

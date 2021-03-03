@@ -219,6 +219,7 @@ x_minor_bresenham::x_minor_bresenham(const cell &c0, const cell &c1) {
   add = diff.array().abs().x();
 
   num = den / 2;
+  dx = static_cast<double>(diff.x()) / diff.y();
 }
 
 int
@@ -274,19 +275,23 @@ x_bresenham::x_bresenham(const cell &_c0, const cell &_c1) noexcept {
     impl_ = std::make_unique<detail::x_minor_bresenham>(_c0, _c1);
 }
 
-struct line {
+struct line : public x_bresenham {
   line(const cell &_begin, const cell &_end) :
-      lower(_begin), upper(_end), impl_(_begin, _end) {}
+      lower(_begin), upper(_end), x_bresenham(_begin, _end) {}
   cell lower, upper;
-
-  inline int
-  get_x_value(int y) noexcept {
-    return impl_.get_next();
-  }
-
-private:
-  x_bresenham impl_;
 };
+
+struct lines_compare {
+  inline bool
+  operator()(const line *_l1, const line *_l2) const noexcept {
+    if (_l1->get_curr() != _l2->get_curr())
+      return _l1->get_curr() < _l2->get_curr();
+
+    return _l1->get_curr() + _l1->get_dx() < _l2->get_curr()  + _l2->get_dx();
+  }
+};
+
+using lines_set = std::set<line *, lines_compare>;
 
 /**
  * @brief helper function for the scan-line algorithm.
@@ -300,12 +305,8 @@ private:
  * @param _cost The searched cost.
  */
 bool
-check_line(const costmap_2d::Costmap2D &_map,
-           const std::map<int, line *> &_lines, int yy, uint8_t _cost) {
-  // no need to bother on an empty set.
-  if (_lines.empty())
-    return true;
-
+check_line(const costmap_2d::Costmap2D &_map, const lines_set &_lines, int yy,
+           uint8_t _cost) {
   // check the input quality - we need an even size because we swipe between the
   // left and right lines.
   assert(_lines.size() % 2 == 0 && "lines.size() must be even");
@@ -313,12 +314,12 @@ check_line(const costmap_2d::Costmap2D &_map,
   // iterate pair-wise within the active-lines. the active lines are sorted
   // by the x-value.
   auto raw_map = _map.getCharMap();
-  for (auto r_line = std::next(_lines.begin()); r_line != _lines.end();
-       std::advance(r_line, 2)) {
-    const auto l_line = std::prev(r_line);
+  for (auto l_line = _lines.begin(); l_line != _lines.end();
+       std::advance(l_line, 2)) {
+    const auto r_line = std::next(l_line);
     // get the x-values
-    const auto r_x = r_line->second->get_x_value(yy) + 1;
-    const auto l_x = l_line->second->get_x_value(yy);
+    const int r_x = (*r_line)->get_next() + 1;
+    const int l_x = (*l_line)->get_next();
 
     // swipe throught the raw costmap.
     const auto r_index = raw_map + _map.getIndex(r_x, yy);
@@ -392,8 +393,7 @@ check_footprint(const costmap_2d::Costmap2D &_map, const polygon &_footprint,
 
   // the footprint might be closed. in this case we can skip the last vertex,
   // since it does not add any information.
-  const auto is_closed =
-      static_cast<int>(_footprint.col(cols - 1) == _footprint.col(0));
+  const auto is_closed = _footprint.col(cols - 1) == _footprint.col(0);
 
   // convert the footprint into lines. a line is defined by two adjacent
   // vertices. assume we have the vertices [a, b, c] (or the closed variant [a,
@@ -425,7 +425,7 @@ check_footprint(const costmap_2d::Costmap2D &_map, const polygon &_footprint,
   // as typical in scan-line algorithm we maintian a set of active lines: the
   // lines are intersected by the current y-value. we sort them by their
   // x-value of the lower vertex of the line (from left to right).
-  std::map<int, line *> active_lines;
+  lines_set active_lines;
 
   // get the y-range of the polygon. since the costmap_2d is row-major, we will
   // iterate within a row in our main loop.
@@ -445,6 +445,8 @@ check_footprint(const costmap_2d::Costmap2D &_map, const polygon &_footprint,
 
     assert(yy <= y_max && "yy out of range");
 
+    if (next_vertex == vertex_set.end())
+      break;
     // we have reached the next_vertex. we remove ending lines form and add new
     // lines to the active set. we iterate until we reach a vertex with a bigger
     // y value, since multiple vertices may be located at the current scan line.
@@ -453,16 +455,14 @@ check_footprint(const costmap_2d::Costmap2D &_map, const polygon &_footprint,
         // a line starts, if both if its vertices are equal or above the current
         // scan-line.
         if (line->lower.y() >= yy && line->upper.y() >= yy) {
-          assert(active_lines.find(line->lower.x()) == active_lines.end() &&
+          assert(active_lines.find(&(*line)) == active_lines.end() &&
                  "duplicate x-value");
-          active_lines.emplace(line->lower.x(), line);
+          active_lines.emplace(line);
         }
         else
-          active_lines.erase(line->lower.x());
+          active_lines.erase(line);
       }
     }
-    assert(next_vertex != vertex_set.end() && "reached lines.end()");
-    assert(next_vertex->first > yy && "misordered vertices");
   }
   return true;
 }

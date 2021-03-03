@@ -1,11 +1,13 @@
 #include <dpose_core/dpose_costmap.hpp>
 #include <gtest/gtest.h>
 
+#include <base_local_planner/footprint_helper.h>
 #include <costmap_2d/costmap_2d.h>
 
 #include <utility>
 
 using dpose_core::cell;
+using dpose_core::check_footprint;
 using dpose_core::is_inside;
 using dpose_core::polygon;
 using dpose_core::raytrace;
@@ -86,6 +88,7 @@ struct rotated_line_fixture : public TestWithParam<double> {
 // point.
 INSTANTIATE_TEST_SUITE_P(/**/, rotated_line_fixture, Range(0.1, 1.4, 0.1));
 
+// test compares the x-bresenham to the raytrace function.
 TEST_P(rotated_line_fixture, generic) {
   // generate the end
   end << std::cos(GetParam()) * radius, std::sin(GetParam()) * radius;
@@ -111,4 +114,83 @@ TEST_P(rotated_line_fixture, generic) {
   }
 }
 
+// here we test that the output of x_bresenham is invariant to the order of the
+// arguments used in the constructor.
+TEST_P(rotated_line_fixture, order_invariance) {
+  // generate the end
+  end << std::cos(GetParam()) * radius, std::sin(GetParam()) * radius;
+
+  // create two instances with swapped arguments orders
+  x_bresenham up(zero, end), down(end, zero);
+
+  // check the first 10 points
+  for (size_t ii = 0; ii != 10; ++ii)
+    EXPECT_EQ(up.get_next(), down.get_next());
+}
+
 }  // namespace test_x_bresenham
+
+namespace test_check_footprint {
+
+// very artistic!
+inline polygon
+make_hand() {
+  polygon hand(2, 13);
+  // clang-format off
+  hand << 20, 10, 30, 11, 32, 32, 11, 31, 5, 10, 9, -5, -6,
+           5,  4,  3,  2,  1,  0, -1, -2,-3, -6,-7, -3,  5;
+  // clang-format on
+  return hand;
+}
+
+// the parameter is yaw of the footprint
+struct check_footprint_fixture : public TestWithParam<double> {
+  costmap_2d::Costmap2D cm_;
+  polygon footprint_;
+
+  check_footprint_fixture() :
+      cm_(100, 100, 0.1, 0, 0), footprint_(make_hand()) {}
+};
+
+INSTANTIATE_TEST_SUITE_P(/**/, check_footprint_fixture,
+                         Range(0., M_PI * 2, 0.1));
+
+// we test our implementation on the slower ros's checks
+TEST_P(check_footprint_fixture, regression) {
+  // move the footprint into the middle
+  const Eigen::Translation2d trans(cm_.getSizeInCellsX() / 2,
+                                   cm_.getSizeInCellsY() / 2);
+  const Eigen::Rotation2Dd rot(GetParam());
+  const Eigen::Isometry2d iso = trans * rot;
+
+  // create the shifted footprint
+  const polygon shifted_fp =
+      (iso * footprint_.cast<double>()).array().round().cast<int>();
+
+  // now generate the ros-footprint
+  std::vector<costmap_2d::MapLocation> vertices, outline, area;
+  vertices.resize(shifted_fp.cols());
+
+  for (size_t ii = 0; ii != vertices.size(); ++ii)
+    vertices.at(ii) =
+        costmap_2d::MapLocation{shifted_fp(0, ii), shifted_fp(1, ii)};
+
+  cm_.polygonOutlineCells(vertices, outline);
+  cm_.convexFillCells(outline, area);
+
+  // empty would not make sense here.
+  ASSERT_FALSE(area.empty());
+
+  // we now mark everything outside of the footprint cells as occupied
+  auto raw_costmap = cm_.getCharMap();
+  const auto map_size = cm_.getSizeInCellsX() * cm_.getSizeInCellsY();
+  std::fill_n(raw_costmap, map_size, costmap_2d::LETHAL_OBSTACLE);
+
+  for (const auto& cell : area)
+    cm_.setCost(cell.x, cell.y, costmap_2d::FREE_SPACE);
+
+  // we now check if our cost-check returns free
+  EXPECT_FALSE(check_footprint(cm_, shifted_fp, costmap_2d::LETHAL_OBSTACLE));
+}
+
+}  // namespace test_check_footprint

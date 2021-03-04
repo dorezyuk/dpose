@@ -279,6 +279,7 @@ struct line : public x_bresenham {
   line(const cell &_begin, const cell &_end) :
       lower(_begin), upper(_end), x_bresenham(_begin, _end) {}
   cell lower, upper;
+  bool active = false;
 };
 
 struct lines_compare {
@@ -286,8 +287,7 @@ struct lines_compare {
   operator()(const line *_l1, const line *_l2) const noexcept {
     if (_l1->get_curr() != _l2->get_curr())
       return _l1->get_curr() < _l2->get_curr();
-
-    return _l1->get_curr() + _l1->get_dx() < _l2->get_curr()  + _l2->get_dx();
+    return _l1->get_curr() + _l1->get_dx() < _l2->get_curr() + _l2->get_dx();
   }
 };
 
@@ -326,7 +326,10 @@ check_line(const costmap_2d::Costmap2D &_map, const lines_set &_lines, int yy,
     auto l_index = raw_map + _map.getIndex(l_x, yy);
     for (; l_index != r_index; ++l_index) {
       if (*l_index == _cost)
-        return false;
+        *l_index = 100;
+      else
+        *l_index = 10;
+        // return false;
     }
   }
   return true;
@@ -436,13 +439,12 @@ check_footprint(const costmap_2d::Costmap2D &_map, const polygon &_footprint,
   // - b: (5, 1)
   // - c: (-1, 2)
 
-  for (auto yy = _footprint.row(1).minCoeff() - 1; yy != y_max; ++yy) {
+  for (auto yy = _footprint.row(1).minCoeff() - 1; yy != y_max;) {
     // our active line set changes only on vertices. we can hence use the
     // current line set until we reach the next vertex.
-    for (; yy != next_vertex->first; ++yy)
+    for (; yy < next_vertex->first; ++yy)
       if (!check_line(_map, active_lines, yy, _cost))
         return false;
-
     assert(yy <= y_max && "yy out of range");
 
     if (next_vertex == vertex_set.end())
@@ -454,13 +456,19 @@ check_footprint(const costmap_2d::Costmap2D &_map, const polygon &_footprint,
       for (const auto &line : next_vertex->second) {
         // a line starts, if both if its vertices are equal or above the current
         // scan-line.
-        if (line->lower.y() >= yy && line->upper.y() >= yy) {
-          assert(active_lines.find(&(*line)) == active_lines.end() &&
-                 "duplicate x-value");
+        if (line->active) {
+          // manual search for the active line as currenlty
+          // active_line.find(line) does not work as expected.
+          auto iter = active_lines.begin();
+          while (iter != active_lines.end() && *iter != line)
+            ++iter;
+          assert(iter != active_lines.end() && "line not found");
+          active_lines.erase(iter);
+        }
+        else{
+          line->active = true;
           active_lines.emplace(line);
         }
-        else
-          active_lines.erase(line);
       }
     }
   }

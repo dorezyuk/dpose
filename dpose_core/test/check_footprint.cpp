@@ -135,10 +135,10 @@ namespace test_check_footprint {
 // very artistic!
 inline polygon
 make_hand() {
-  polygon hand(2, 13);
+  polygon hand(2, 19);
   // clang-format off
-  hand << 20, 10, 30, 11, 32, 32, 11, 31, 5, 10, 9, -5, -6,
-           5,  4,  3,  2,  1,  0, -1, -2,-3, -6,-7, -3,  5;
+  hand << 20, 20, 10, 10, 30, 30, 11, 11, 32, 32, 11, 11, 31, 31,  5, 10, 9,   -5, -6,
+          12, 11, 10,  8,  8,  6,  6,  3,  2, -1, -2, -4, -5, -7, -6, -10,-11, -6,  9;
   // clang-format on
   return hand;
 }
@@ -186,11 +186,14 @@ TEST_P(check_footprint_fixture, regression) {
   const auto map_size = cm_.getSizeInCellsX() * cm_.getSizeInCellsY();
   std::fill_n(raw_costmap, map_size, costmap_2d::LETHAL_OBSTACLE);
 
-  for (const auto& cell : area)
+  for (const auto& cell : outline)
     cm_.setCost(cell.x, cell.y, costmap_2d::FREE_SPACE);
 
+  cm_.saveMap("original.pgm");
   // we now check if our cost-check returns free
-  EXPECT_FALSE(check_footprint(cm_, shifted_fp, costmap_2d::LETHAL_OBSTACLE));
+  EXPECT_TRUE(check_footprint(cm_, shifted_fp, costmap_2d::LETHAL_OBSTACLE));
+
+  cm_.saveMap("altered.pgm");
 }
 
 }  // namespace test_check_footprint

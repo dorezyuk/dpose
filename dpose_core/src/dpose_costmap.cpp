@@ -329,7 +329,7 @@ check_line(const costmap_2d::Costmap2D &_map, const lines_set &_lines, int yy,
         *l_index = 100;
       else
         *l_index = 10;
-        // return false;
+      // return false;
     }
   }
   return true;
@@ -411,49 +411,69 @@ check_footprint(const costmap_2d::Costmap2D &_map, const polygon &_footprint,
   if (!is_closed && _footprint(1, cols - 1) != _footprint(1, 0))
     lines.emplace_back(_footprint.col(cols - 1), _footprint.col(0));
 
-  // create a height map of the vertices mappint the y-value of vertex to its
-  // two adjacent edges. assume we have the vertices [a, b, c] and have
-  // generated the edges [[a, b], [b, c], [c, a]] which we call [A, B, C]. our
-  // map then contains {a.y: [C, A], b.y: [A, B], c.y: [B, C]}.
+  // create a map of the vertices mapping the y-value of vertex to its two
+  // adjacent edges. assume we have the vertices [a, b, c] and have generated
+  // the edges [[a, b], [b, c], [c, a]] which we call [A, B, C]. our map then
+  // contains {a.y: [C, A], b.y: [A, B], c.y: [B, C]}.
   using vertex = std::array<line *, 2>;
   std::multimap<int, vertex> vertex_set;
-  // add the first
+  for (auto l_line = lines.begin(), r_line = std::next(l_line);
+       r_line != lines.end(); ++l_line, ++r_line) {
+    vertex_set.emplace(r_line->lower.y(), vertex{&(*l_line), &(*r_line)});
+  }
   vertex_set.emplace(lines.front().lower.y(),
                      vertex{&lines.back(), &lines.front()});
-  // add all remaining
-  for (auto l_line = lines.begin(), r_line = std::next(l_line);
-       r_line != lines.end(); ++l_line, ++r_line)
-    vertex_set.emplace(r_line->lower.y(), vertex{&(*l_line), &(*r_line)});
 
   // as typical in scan-line algorithm we maintian a set of active lines: the
-  // lines are intersected by the current y-value. we sort them by their
-  // x-value of the lower vertex of the line (from left to right).
+  // lines are intersected by the current y-value. we sort them by their lowest
+  // x-value.
   lines_set active_lines;
 
-  // get the y-range of the polygon. since the costmap_2d is row-major, we will
-  // iterate within a row in our main loop.
-  const auto y_max = _footprint.row(1).maxCoeff() + 1;
-  auto next_vertex = vertex_set.begin();
-  // assume our vertice are [a, b, c] and have the following coordinates
-  // - a: (0, 0)
-  // - b: (5, 1)
-  // - c: (-1, 2)
+  // init the scan-line below the lowerst y-value.
+  auto yy = _footprint.row(1).minCoeff() - 1;
 
-  for (auto yy = _footprint.row(1).minCoeff() - 1; yy != y_max;) {
+  // assume our vertice are [a, b, c]. as above we denote the edges [[a, b], [b,
+  // c], [c, a]] as [A, B, C]. the vertices shall have the following coordinates
+  // - a: (0, 0)
+  // - b: (5, 2)
+  // - c: (-1, 3)
+  // our yy denotes the current y-value of the scan line and  will range from
+  // [-1 ,3]. the vertex_set is  {a.y: [C, A], b.y: [A, B], c.y: [B, C]}. v_next
+  // will be the next vertex we can reach.
+  // yy = -1:
+  //    active_lines: []
+  //    v_next: a (with a.y = 0)
+  // yy = 0:
+  //    active_lines [] -> [A, C]
+  //    v_next: b (with b.y = 2)
+  // yy = 1:
+  //    active_lines [A, C]
+  //    v_next: b (with b.y = 2)
+  // yy = 2
+  //    active_lines [A, C] -> [C, B]
+  //    v_next: c (with c.y = 3)
+  // yy = 3
+  //    active_lines [A, C] -> []
+  //    v_next: end
+
+  // iterate over all vertices
+  for (auto v_next = vertex_set.begin(); v_next != vertex_set.end();) {
     // our active line set changes only on vertices. we can hence use the
     // current line set until we reach the next vertex.
-    for (; yy < next_vertex->first; ++yy)
+    for (; yy < v_next->first; ++yy)
       if (!check_line(_map, active_lines, yy, _cost))
         return false;
-    assert(yy <= y_max && "yy out of range");
 
-    if (next_vertex == vertex_set.end())
-      break;
-    // we have reached the next_vertex. we remove ending lines form and add new
-    // lines to the active set. we iterate until we reach a vertex with a bigger
-    // y value, since multiple vertices may be located at the current scan line.
-    for (; next_vertex->first == yy; ++next_vertex) {
-      for (const auto &line : next_vertex->second) {
+    // check the current line-set (before the change)
+    if (!check_line(_map, active_lines, yy, _cost))
+      return false;
+
+    // we have reached the v_next. we remove ending lines form and add new
+    // lines to the active_lines. we iterate until we reach a vertex with a
+    // bigger y value, since multiple vertices may be located at the current
+    // scan line.
+    for (; v_next != vertex_set.end() && v_next->first == yy; ++v_next) {
+      for (const auto &line : v_next->second) {
         // a line starts, if both if its vertices are equal or above the current
         // scan-line.
         if (line->active) {
@@ -465,7 +485,7 @@ check_footprint(const costmap_2d::Costmap2D &_map, const polygon &_footprint,
           assert(iter != active_lines.end() && "line not found");
           active_lines.erase(iter);
         }
-        else{
+        else {
           line->active = true;
           active_lines.emplace(line);
         }

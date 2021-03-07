@@ -222,11 +222,10 @@ x_minor_bresenham::x_minor_bresenham(const cell &c0, const cell &c1) {
   dx = static_cast<double>(diff.x()) / diff.y();
 }
 
-int
-x_minor_bresenham::get_next() noexcept {
+void
+x_minor_bresenham::advance_x() noexcept {
   assert(den >= add && "bad bresenham");
 
-  const auto x_buff = x_curr;
   num += add;
   if (num >= den) {
     num -= den;
@@ -234,7 +233,6 @@ x_minor_bresenham::get_next() noexcept {
   }
 
   assert(num < den && "bresenham failed");
-  return x_buff;
 }
 
 x_major_bresenham::x_major_bresenham(const cell &c0, const cell &c1) :
@@ -244,11 +242,10 @@ x_major_bresenham::x_major_bresenham(const cell &c0, const cell &c1) :
   num = den / 2;
 }
 
-int
-x_major_bresenham::get_next() noexcept {
-  assert(den >= add && "bad bresenham");
+void
+x_major_bresenham::advance_x() noexcept {
+  assert(den >= add && "den cannot be smaller then add");
 
-  const auto x_buff = x_curr;
   const auto diff = den - num;
   const int step = diff / add;
   num += (step * add);
@@ -262,7 +259,6 @@ x_major_bresenham::get_next() noexcept {
   assert(num >= den && "logic error");
   num -= den;
   assert(num < den && "logic error");
-  return x_buff;
 }
 
 }  // namespace detail
@@ -285,13 +281,14 @@ struct line : public x_bresenham {
 struct lines_compare {
   inline bool
   operator()(const line *_l1, const line *_l2) const noexcept {
-    if (_l1->get_curr() != _l2->get_curr())
-      return _l1->get_curr() < _l2->get_curr();
-    return _l1->get_curr() + _l1->get_dx() < _l2->get_curr() + _l2->get_dx();
+    if (_l1->get_x() != _l2->get_x())
+      return _l1->get_x() < _l2->get_x();
+
+    return _l1->get_dx() < _l2->get_dx();
   }
 };
 
-using lines_set = std::set<line *, lines_compare>;
+using lines_set = std::list<line *>;
 
 /**
  * @brief helper function for the scan-line algorithm.
@@ -318,18 +315,18 @@ check_line(const costmap_2d::Costmap2D &_map, const lines_set &_lines, int yy,
        std::advance(l_line, 2)) {
     const auto r_line = std::next(l_line);
     // get the x-values
-    const int r_x = (*r_line)->get_next() + 1;
-    const int l_x = (*l_line)->get_next();
+    const int l_x = (*l_line)->get_x() + 1;
+    const int r_x = (*r_line)->get_x();
 
-    // swipe throught the raw costmap.
+    if (l_x >= r_x)
+      continue;
+
+    // swipe through the raw costmap.
     const auto r_index = raw_map + _map.getIndex(r_x, yy);
     auto l_index = raw_map + _map.getIndex(l_x, yy);
     for (; l_index != r_index; ++l_index) {
       if (*l_index == _cost)
-        *l_index = 100;
-      else
-        *l_index = 10;
-      // return false;
+        return false;
     }
   }
   return true;
@@ -380,6 +377,34 @@ check_without_area(const costmap_2d::Costmap2D &_map, const polygon &_footprint,
 }
 
 bool
+check_outline(const costmap_2d::Costmap2D &_map, const polygon &_footprint,
+              uint8_t _cost) {
+  // get the number of vertices
+  const auto cols = _footprint.cols();
+  assert(cols > 2 && "no outline defined");
+
+  // setup the check lambda
+  auto is_good = [&](const cell __cell) {
+    return _map.getCost(__cell.x(), __cell.y()) != _cost;
+  };
+
+  for (int ii = 1; ii < cols; ++ii) {
+    const auto ray = raytrace(_footprint.col(ii - 1), _footprint.col(ii));
+    if (!std::all_of(ray.begin(), ray.end(), is_good))
+      return false;
+  }
+
+  // the footprint might be closed. in this case we can skip the last vertex,
+  // since it does not add any information.
+  const auto is_closed = _footprint.col(cols - 1) == _footprint.col(0);
+  if (!is_closed) {
+    const auto ray = raytrace(_footprint.col(cols - 1), _footprint.col(0));
+    return std::all_of(ray.begin(), ray.end(), is_good);
+  }
+  return true;
+}
+
+bool
 check_footprint(const costmap_2d::Costmap2D &_map, const polygon &_footprint,
                 uint8_t _cost) {
   // check if all vertices are within the costmap
@@ -391,8 +416,13 @@ check_footprint(const costmap_2d::Costmap2D &_map, const polygon &_footprint,
   if (cols < 3)
     return check_without_area(_map, _footprint, _cost);
 
-  // we are now certain that we have a polygon and will implement the scan-line
-  // algorithm below.
+  // we check the outline seperated, since we have to pay attention to the
+  // discritezation issues.
+  if (!check_outline(_map, _footprint, _cost))
+    return false;
+
+  // we are now certain that we have a polygon and will
+  // implement the scan-line algorithm below.
 
   // the footprint might be closed. in this case we can skip the last vertex,
   // since it does not add any information.
@@ -460,37 +490,37 @@ check_footprint(const costmap_2d::Costmap2D &_map, const polygon &_footprint,
   for (auto v_next = vertex_set.begin(); v_next != vertex_set.end();) {
     // our active line set changes only on vertices. we can hence use the
     // current line set until we reach the next vertex.
-    for (; yy < v_next->first; ++yy)
+    for (; yy < v_next->first; ++yy) {
       if (!check_line(_map, active_lines, yy, _cost))
         return false;
 
-    // check the current line-set (before the change)
-    if (!check_line(_map, active_lines, yy, _cost))
-      return false;
+      // advance the lines
+      for (auto &l : active_lines)
+        l->advance_x();
+    }
 
     // we have reached the v_next. we remove ending lines form and add new
     // lines to the active_lines. we iterate until we reach a vertex with a
     // bigger y value, since multiple vertices may be located at the current
     // scan line.
     for (; v_next != vertex_set.end() && v_next->first == yy; ++v_next) {
+      // check the two lines of the current vertex
       for (const auto &line : v_next->second) {
         // a line starts, if both if its vertices are equal or above the current
         // scan-line.
         if (line->active) {
-          // manual search for the active line as currenlty
-          // active_line.find(line) does not work as expected.
-          auto iter = active_lines.begin();
-          while (iter != active_lines.end() && *iter != line)
-            ++iter;
+          auto iter = std::find(active_lines.begin(), active_lines.end(), line);
           assert(iter != active_lines.end() && "line not found");
           active_lines.erase(iter);
         }
         else {
           line->active = true;
-          active_lines.emplace(line);
+          active_lines.emplace_back(line);
         }
       }
     }
+    // reorder the active lines after we have changed them
+    active_lines.sort(lines_compare{});
   }
   return true;
 }

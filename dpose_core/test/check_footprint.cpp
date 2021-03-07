@@ -108,7 +108,8 @@ TEST_P(rotated_line_fixture, generic) {
   for (const auto& point : ray) {
     // we have a new y: check the output
     if (point.y() != curr_y) {
-      EXPECT_EQ(point.x(), br.get_next());
+      EXPECT_EQ(point.x(), br.get_x());
+      br.advance_x();
       curr_y = point.y();
     }
   }
@@ -124,8 +125,11 @@ TEST_P(rotated_line_fixture, order_invariance) {
   x_bresenham up(zero, end), down(end, zero);
 
   // check the first 10 points
-  for (size_t ii = 0; ii != 10; ++ii)
-    EXPECT_EQ(up.get_next(), down.get_next());
+  for (size_t ii = 0; ii != 10; ++ii) {
+    EXPECT_EQ(up.get_x(), down.get_x());
+    up.advance_x();
+    down.advance_x();
+  }
 }
 
 }  // namespace test_x_bresenham
@@ -143,14 +147,23 @@ make_hand() {
   return hand;
 }
 
+inline polygon
+make_square() {
+  polygon square(2, 4);
+  square << 10, 10, -10, -10, -10, 10, 10, -10;
+  return square;
+}
+
 // the parameter is yaw of the footprint
 struct check_footprint_fixture : public TestWithParam<double> {
   costmap_2d::Costmap2D cm_;
   polygon footprint_;
 
   check_footprint_fixture() :
-      cm_(100, 100, 0.1, 0, 0), footprint_(make_hand()) {}
+      cm_(100, 100, 0.1, 0, 0), footprint_(make_square()) {}
 };
+
+int counter = 0;
 
 INSTANTIATE_TEST_SUITE_P(/**/, check_footprint_fixture,
                          Range(0., M_PI * 2, 0.1));
@@ -186,14 +199,17 @@ TEST_P(check_footprint_fixture, regression) {
   const auto map_size = cm_.getSizeInCellsX() * cm_.getSizeInCellsY();
   std::fill_n(raw_costmap, map_size, costmap_2d::LETHAL_OBSTACLE);
 
-  for (const auto& cell : outline)
+  for (const auto& cell : area)
     cm_.setCost(cell.x, cell.y, costmap_2d::FREE_SPACE);
 
-  cm_.saveMap("original.pgm");
   // we now check if our cost-check returns free
   EXPECT_TRUE(check_footprint(cm_, shifted_fp, costmap_2d::LETHAL_OBSTACLE));
 
-  cm_.saveMap("altered.pgm");
+  for (const auto& cell : area) {
+    cm_.setCost(cell.x, cell.y, costmap_2d::LETHAL_OBSTACLE);
+    EXPECT_FALSE(check_footprint(cm_, shifted_fp, costmap_2d::LETHAL_OBSTACLE)) << cell.x << ", " << cell.y;
+    cm_.setCost(cell.x, cell.y, costmap_2d::FREE_SPACE);
+  }
 }
 
 }  // namespace test_check_footprint

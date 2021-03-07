@@ -99,11 +99,11 @@ namespace detail {
 struct x_minor_bresenham {
   x_minor_bresenham(const cell& c0, const cell& c1);
 
-  virtual int
-  get_next() noexcept;
+  virtual void
+  advance_x() noexcept;
 
   inline int
-  get_curr() const noexcept {
+  get_x() const noexcept {
     return x_curr;
   }
 
@@ -125,8 +125,8 @@ protected:
 struct x_major_bresenham : public x_minor_bresenham {
   x_major_bresenham(const cell& c0, const cell& c1);
 
-  int
-  get_next() noexcept final;
+  void
+  advance_x() noexcept final;
 };
 
 }  // namespace detail
@@ -143,14 +143,14 @@ struct x_bresenham {
   x_bresenham(const x_bresenham& _other) :
       impl_(std::make_unique<detail::x_minor_bresenham>(*_other.impl_)) {}
 
-  inline int
-  get_next() noexcept {
-    return impl_->get_next();
+  inline void
+  advance_x() noexcept {
+    return impl_->advance_x();
   }
 
   inline int
-  get_curr() const noexcept {
-    return impl_->get_curr();
+  get_x() const noexcept {
+    return impl_->get_x();
   }
 
   inline double

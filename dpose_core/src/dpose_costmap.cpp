@@ -198,34 +198,32 @@ is_inside(const costmap_2d::Costmap2D &_map,
   return true;
 }
 
-namespace detail {
+namespace bresenham {
 
-x_minor_bresenham::x_minor_bresenham(const cell &c0, const cell &c1) {
-  cell diff;
+base_iterator::base_iterator(const cell &_begin, const cell &_end) noexcept {
+  const Eigen::Array2i diff = _end - _begin;
 
-  // we start at the vertex with the lowest y value.
-  if (c0.y() < c1.y()) {
-    x_curr = c0.x();
-    diff = c1 - c0;
-  }
-  else {
-    x_curr = c1.x();
-    diff = c0 - c1;
-  }
+  // init the common members. the naming follows the naming of raytrace.
+  x_sign = diff.sign().x();
+  den = diff.abs().maxCoeff();
+  add = diff.abs().minCoeff();
 
-  // init the bresenham's members
-  x_sign = diff.array().sign().x();
-  den = diff.array().abs().y();
-  add = diff.array().abs().x();
+  // some checks
+  assert(den >= 0);
+  assert(add >= 0);
+  assert(den >= add);
 
   num = den / 2;
   dx = static_cast<double>(diff.x()) / diff.y();
 }
 
-void
-x_minor_bresenham::advance_x() noexcept {
-  assert(den >= add && "bad bresenham");
+x_minor_ascending::x_minor_ascending(const cell &_begin, const cell &_end) :
+    base_iterator(_begin, _end) {
+  x_curr = _begin.x();
+}
 
+x_minor_ascending &
+x_minor_ascending::operator++() noexcept {
   num += add;
   if (num >= den) {
     num -= den;
@@ -233,20 +231,34 @@ x_minor_bresenham::advance_x() noexcept {
   }
 
   assert(num < den && "bresenham failed");
+  return *this;
 }
 
-x_major_bresenham::x_major_bresenham(const cell &c0, const cell &c1) :
-    x_minor_bresenham(c0, c1) {
-  // major axis is now x
-  std::swap(add, den);
-  num = den / 2;
+x_minor_descending::x_minor_descending(const cell &begin, const cell &end) :
+    base_iterator(end, begin) {
+  x_curr = begin.x();
 }
 
-void
-x_major_bresenham::advance_x() noexcept {
-  assert(den >= add && "den cannot be smaller then add");
+x_minor_descending &
+x_minor_descending::operator++() noexcept {
+  num -= add;
+  if (num < 0) {
+    num += den;
+    x_curr -= x_sign;
+  }
 
-  const auto diff = den - num;
+  assert(num > 0 && "bresenham failed");
+  return *this;
+}
+
+x_major_ascending::x_major_ascending(const cell &_begin, const cell &_end) :
+    base_iterator(_begin, _end) {
+  x_curr = _begin.x();
+}
+
+x_major_ascending &
+x_major_ascending::operator++() noexcept {
+  const int diff = den - num;
   const int step = diff / add;
   num += (step * add);
   x_curr += (step * x_sign);
@@ -259,16 +271,49 @@ x_major_bresenham::advance_x() noexcept {
   assert(num >= den && "logic error");
   num -= den;
   assert(num < den && "logic error");
+  return *this;
 }
 
-}  // namespace detail
+x_major_descending::x_major_descending(const cell &begin, const cell &end) :
+    base_iterator(end, begin) {
+  x_curr = begin.x();
+}
+
+x_major_descending &
+x_major_descending::operator++() noexcept {
+  assert(den >= add && "den cannot be smaller then add");
+
+  const int step = num / add;
+  num -= (step * add);
+  x_curr -= (step * x_sign);
+  // check if we need to add another step to reach negative numbers
+  if (num >= 0) {
+    num -= add;
+    x_curr -= x_sign;
+  }
+
+  assert(num < 0 && "logic error");
+  num += den;
+  assert(num > 0 && "logic error");
+  return *this;
+}
+
+}  // namespace bresenham
 
 x_bresenham::x_bresenham(const cell &_c0, const cell &_c1) noexcept {
   const cell diff = (_c1 - _c0).array().abs();
-  if (diff.x() > diff.y())
-    impl_ = std::make_unique<detail::x_major_bresenham>(_c0, _c1);
-  else
-    impl_ = std::make_unique<detail::x_minor_bresenham>(_c0, _c1);
+  if (diff.x() > diff.y()) {
+    if (_c1.y() > _c0.y())
+      impl_ = std::make_unique<bresenham::x_major_ascending>(_c0, _c1);
+    else
+      impl_ = std::make_unique<bresenham::x_major_descending>(_c1, _c0);
+  }
+  else {
+    if (_c1.y() > _c0.y())
+      impl_ = std::make_unique<bresenham::x_minor_ascending>(_c0, _c1);
+    else
+      impl_ = std::make_unique<bresenham::x_minor_descending>(_c1, _c0);
+  }
 }
 
 struct line : public x_bresenham {
@@ -417,7 +462,7 @@ check_footprint(const costmap_2d::Costmap2D &_map, const polygon &_footprint,
     return check_without_area(_map, _footprint, _cost);
 
   // we check the outline seperated, since we have to pay attention to the
-  // discritezation issues.
+  // discretization issues.
   if (!check_outline(_map, _footprint, _cost))
     return false;
 

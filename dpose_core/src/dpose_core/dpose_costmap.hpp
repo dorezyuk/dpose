@@ -90,46 +90,60 @@ bool
 is_inside(const costmap_2d::Costmap2D& _map,
           const polygon& _footprint) noexcept;
 
-namespace detail {
+namespace bresenham {
 
-/**
- * @brief Special implementation for x_bresenham, where delta in x is smaller
- * then delta in y.
- */
-struct x_minor_bresenham {
-  x_minor_bresenham(const cell& c0, const cell& c1);
+/// @brief base class for our customized bresenham iteratorion.
+struct base_iterator {
+  base_iterator(const cell& _begin, const cell& _end) noexcept;
+  virtual ~base_iterator() = default;
 
-  virtual void
-  advance_x() noexcept;
-
-  inline int
-  get_x() const noexcept {
+  inline const int&
+  operator*() const noexcept {
     return x_curr;
   }
 
-  inline double
+  inline const double&
   get_dx() const noexcept {
     return dx;
   }
 
+  virtual base_iterator&
+  operator++() noexcept = 0;
 
 protected:
   int x_curr, x_sign, den, add, num;
   double dx;
 };
 
-/**
- * @brief Special implementation for x_bresenham, where delta in x is larger
- * then delta in y.
- */
-struct x_major_bresenham : public x_minor_bresenham {
-  x_major_bresenham(const cell& c0, const cell& c1);
+struct x_minor_ascending : public base_iterator {
+  x_minor_ascending(const cell& _begin, const cell& _end);
 
-  void
-  advance_x() noexcept final;
+  x_minor_ascending&
+  operator++() noexcept final;
 };
 
-}  // namespace detail
+struct x_minor_descending : public base_iterator {
+  x_minor_descending(const cell& _begin, const cell& _end);
+
+  x_minor_descending&
+  operator++() noexcept final;
+};
+
+struct x_major_ascending : public base_iterator {
+  x_major_ascending(const cell& _begin, const cell& _end);
+
+  x_major_ascending&
+  operator++() noexcept final;
+};
+
+struct x_major_descending : public base_iterator {
+  x_major_descending(const cell& begin, const cell& end);
+
+  x_major_descending&
+  operator++() noexcept final;
+};
+
+}  // namespace bresenham
 
 /**
  * @brief Implements the bresenham-raytracing algorithm such that the get_next()
@@ -140,26 +154,24 @@ struct x_major_bresenham : public x_minor_bresenham {
  */
 struct x_bresenham {
   x_bresenham(const cell& _c0, const cell& _c1) noexcept;
-  x_bresenham(const x_bresenham& _other) :
-      impl_(std::make_unique<detail::x_minor_bresenham>(*_other.impl_)) {}
 
   inline void
   advance_x() noexcept {
-    return impl_->advance_x();
+    impl_->operator++();
   }
 
-  inline int
+  inline const int&
   get_x() const noexcept {
-    return impl_->get_x();
+    return **impl_;
   }
 
-  inline double
+  inline const double&
   get_dx() const noexcept {
     return impl_->get_dx();
   }
 
 private:
-  std::unique_ptr<detail::x_minor_bresenham> impl_;
+  std::unique_ptr<bresenham::base_iterator> impl_;
 };
 
 bool

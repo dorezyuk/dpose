@@ -205,7 +205,9 @@ TEST_P(check_footprint_fixture, regression) {
   // we now check if our cost-check returns free
   EXPECT_TRUE(check_footprint(cm_, shifted_fp, costmap_2d::LETHAL_OBSTACLE));
 
-  for (const auto& cell : area) {
+  static int counter = 0;
+  // cm_.saveMap("map_" + std::to_string(counter++) + ".pgm");
+  for (const auto& cell : outline) {
     cm_.setCost(cell.x, cell.y, costmap_2d::LETHAL_OBSTACLE);
     EXPECT_FALSE(check_footprint(cm_, shifted_fp, costmap_2d::LETHAL_OBSTACLE)) << cell.x << ", " << cell.y;
     cm_.setCost(cell.x, cell.y, costmap_2d::FREE_SPACE);

@@ -30,6 +30,7 @@
 
 #include <cmath>
 #include <limits>
+#include <memory>
 #include <unordered_map>
 
 namespace dpose_core {
@@ -92,6 +93,20 @@ is_inside(const costmap_2d::Costmap2D& _map,
 
 namespace bresenham {
 
+/*
+ * customized bresenham implementation.
+ *
+ * very long story... for the scan line algorithm we perform raytracing on the
+ * outline of the polygon. as we increment the y-value on every ray, we might
+ * have to "skip" multiple cells  in lines which have a bigger x-delta: (dx >
+ * dy). these lines are called here "x_major" (the "x_minor" is their
+ * counterpart). bresenham is also "directed" (in the sense that the line from
+ * p0 to p1 might look differently then p1 to p0). we add therefore a further
+ * subclasses called "ascending" (for y0 < y1) and "descending". this allows us
+ * to stay consistent with typical ros-implementations like
+ * costmap_2d::Costmap2D::getOutlineCells.
+ */
+
 /// @brief base class for our customized bresenham iteratorion.
 struct base_iterator {
   base_iterator(const cell& _begin, const cell& _end) noexcept;
@@ -115,6 +130,7 @@ protected:
   double dx;
 };
 
+/// @brief implementation for lines dx < dy and y0 < y1
 struct x_minor_ascending : public base_iterator {
   x_minor_ascending(const cell& _begin, const cell& _end);
 
@@ -122,6 +138,7 @@ struct x_minor_ascending : public base_iterator {
   operator++() noexcept final;
 };
 
+/// @brief implementation for lines dx < dy and y0 > y1
 struct x_minor_descending : public base_iterator {
   x_minor_descending(const cell& _begin, const cell& _end);
 
@@ -129,6 +146,7 @@ struct x_minor_descending : public base_iterator {
   operator++() noexcept final;
 };
 
+/// @brief implementation for lines dx > dy and y0 < y1
 struct x_major_ascending : public base_iterator {
   x_major_ascending(const cell& _begin, const cell& _end);
 
@@ -136,6 +154,7 @@ struct x_major_ascending : public base_iterator {
   operator++() noexcept final;
 };
 
+/// @brief implementation for lines dx > dy and y0 > y1
 struct x_major_descending : public base_iterator {
   x_major_descending(const cell& begin, const cell& end);
 
@@ -146,11 +165,9 @@ struct x_major_descending : public base_iterator {
 }  // namespace bresenham
 
 /**
- * @brief Implements the bresenham-raytracing algorithm such that the get_next()
- * method will always yield the next x-value on a line.
- *
- * The sequence will start with the x-value of the given vertex which has the
- * lowerst y-value.
+ * @brief Implements the bresenham-raytracing algorithm such that the get_x()
+ * method will the current x-value on a line and advance_x() increment to the
+ * next x value.
  */
 struct x_bresenham {
   x_bresenham(const cell& _c0, const cell& _c1) noexcept;

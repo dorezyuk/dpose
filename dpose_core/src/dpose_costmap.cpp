@@ -29,6 +29,7 @@
 #include <array>
 #include <cassert>
 #include <iterator>
+#include <list>
 #include <map>
 #include <memory>
 #include <numeric>

@@ -1,10 +1,12 @@
 #include <dpose_core/dpose_costmap.hpp>
 #include <gtest/gtest.h>
 
-#include <base_local_planner/footprint_helper.h>
 #include <costmap_2d/costmap_2d.h>
 
+#include <algorithm>
+#include <cmath>
 #include <utility>
+#include <vector>
 
 using dpose_core::cell;
 using dpose_core::check_footprint;
@@ -119,7 +121,7 @@ TEST_P(rotated_line_fixture, generic) {
 // y-value
 TEST(test_x_bresenham, order_invariance) {
   // generate the end
-  cell end(10, 12), zero(0,0);
+  cell end(10, 12), zero(0, 0);
 
   // create two instances with swapped arguments orders
   x_bresenham up(zero, end), down(end, zero);

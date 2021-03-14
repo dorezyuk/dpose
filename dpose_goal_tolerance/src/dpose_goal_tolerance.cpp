@@ -367,15 +367,28 @@ DposeGoalTolerance::preProcess(Pose &_start, Pose &_goal) {
     return false;
   }
 
-  // publish the filtered pose
-  if (status == Ipopt::Solve_Succeeded) {
-    // todo add a verification step
-    pose_pub_.publish(_goal);
-    return true;
+  // check the output from the optimization
+  if (status != Ipopt::Solve_Succeeded) {
+    DP_WARN("optimization failed with " << status);
+    return false;
   }
 
-  DP_WARN("optimization failed with " << status);
-  return false;
+  // transform the footprint
+  const pose &curr_pose = our_problem->get_pose();
+  Eigen::Isometry2d trans(Eigen::Translation2d(curr_pose.x(), curr_pose.y()) *
+                          Eigen::Rotation2Dd(curr_pose.z()));
+  const polygon curr_footprint =
+      (trans * footprint_.cast<double>()).array().round().cast<int>().matrix();
+
+  // check the footprint for collisions
+  if (!check_footprint(*map_->getCostmap(), curr_footprint,
+                       costmap_2d::LETHAL_OBSTACLE)) {
+    DP_WARN("optimization failed: footprint in collision");
+    return false;
+  }
+
+  pose_pub_.publish(_goal);
+  return true;
 }
 
 using solver_ptr = Ipopt::SmartPtr<Ipopt::IpoptApplication>;
@@ -407,6 +420,7 @@ DposeGoalTolerance::initialize(const std::string &_name, Map *_map) {
   }
 
   map_ = _map;
+  footprint_ = make_footprint(*map_->getLayeredCostmap());
   ros::NodeHandle nh("~" + _name);
 
   // read the padding parameter and safely cast it to unsigned int
@@ -424,7 +438,6 @@ DposeGoalTolerance::initialize(const std::string &_name, Map *_map) {
   load_ipopt_cfg(solver_, nh, "max_iter", 20);
   load_ipopt_cfg(solver_, nh, "max_cpu_time", .5);
   load_ipopt_cfg(solver_, nh, "print_level", 0);
-
 
   // tell ipopt to use quasi-newtow method since we don't use the Hessian from
   // dpose.

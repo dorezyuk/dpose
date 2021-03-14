@@ -222,6 +222,7 @@ private:
   // ros-comm
   Map *map_ = nullptr;
   ros::Publisher pose_pub_;
+  dpose_core::polygon footprint_;
 
   // dynamic reconfigure
   using cfg_server = dynamic_reconfigure::Server<DposeGoalToleranceConfig>;

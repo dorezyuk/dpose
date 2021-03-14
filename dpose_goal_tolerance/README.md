@@ -134,3 +134,9 @@ If set to true, Ipopt will perform a derivative test.
 
 The print-level for Ipopt. The value can range between min (0) and max (12).
 See [print_level](https://coin-or.github.io/Ipopt/OPTIONS.html#OPT_Output) parameter for details.
+
+#### attempts (Int, 10)
+
+It might be that the optimization does not converge against a free pose.
+In this case we set the initial pose (for the optimization) to random pose (within the specified tolerance) and retry the search.
+The attempts parameter specifies how often to reinitialize the search and must be at least 1.

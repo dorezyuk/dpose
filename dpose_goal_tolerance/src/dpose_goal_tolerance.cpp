@@ -32,6 +32,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <random>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -207,7 +208,7 @@ bool
 problem::get_starting_point(index _n, bool _init_x, number *_x, bool _init_z,
                             number *_z_L, number *_z_U, index _m,
                             bool _init_lambda, number *lambda) {
-  std::fill_n(_x, _n, 0);
+  std::copy_n(offset_.data(), _n, _x);
   return true;
 }
 
@@ -328,6 +329,78 @@ to_msg(const pose &_pose, const DposeGoalTolerance::Map &_map) {
   return msg;
 }
 
+/// @brief samples a uniformly distributed random pose
+struct uniform_pose_distribution {
+  explicit uniform_pose_distribution(const DposeGoalToleranceConfig &_param) :
+      dis_rad(0, _param.lin_tolerance),
+      dis_ang(-M_PI, M_PI),
+      dis_yaw(0, _param.rot_tolerance) {}
+
+  // follows the style of std::uniform_real_distribution
+  template <typename _UniformRandomNumberGenerator>
+  pose
+  operator()(_UniformRandomNumberGenerator &_gen) {
+    // generate the three random variables in polar coordinates
+    const double radius = dis_rad(_gen);
+    const double angle = dis_ang(_gen);
+    const double yaw = dis_yaw(_gen);
+
+    // convert to cartesian
+    const auto x = std::cos(angle) * radius;
+    const auto y = std::sin(angle) * radius;
+
+    return {x, y, yaw};
+  }
+
+private:
+  std::uniform_real_distribution<double> dis_rad, dis_ang, dis_yaw;
+};
+
+/// @brief random generator for a random pose
+struct uniform_pose_generator {
+  explicit uniform_pose_generator(const DposeGoalToleranceConfig &_param) :
+      gen(rd()), dis(_param) {}
+
+  inline pose
+  operator()() {
+    return dis(gen);
+  }
+
+private:
+  std::random_device rd;
+  std::mt19937 gen;
+  uniform_pose_distribution dis;
+};
+
+bool
+DposeGoalTolerance::preProcessImpl(pose &_goal) {
+  // run the optimization
+  auto status = solver_->OptimizeTNLP(problem_);
+
+  // check the output from the optimization
+  if (status != Ipopt::Solve_Succeeded) {
+    DP_WARN("optimization failed with " << status);
+    return false;
+  }
+
+  // transform the footprint
+  auto our_problem = dynamic_cast<problem *>(Ipopt::GetRawPtr(problem_));
+  _goal = our_problem->get_pose();
+  Eigen::Isometry2d trans(Eigen::Translation2d(_goal.x(), _goal.y()) *
+                          Eigen::Rotation2Dd(_goal.z()));
+  const polygon curr_footprint =
+      (trans * footprint_.cast<double>()).array().round().cast<int>().matrix();
+
+  // check the footprint for collisions
+  if (!check_footprint(*map_->getCostmap(), curr_footprint,
+                       costmap_2d::LETHAL_OBSTACLE)) {
+    DP_WARN("optimization failed: footprint in collision");
+    return false;
+  }
+
+  return true;
+}
+
 bool
 DposeGoalTolerance::preProcess(Pose &_start, Pose &_goal) {
   // this class is a noop if both tolerances are zero
@@ -357,38 +430,32 @@ DposeGoalTolerance::preProcess(Pose &_start, Pose &_goal) {
   auto our_problem = dynamic_cast<problem *>(Ipopt::GetRawPtr(problem_));
   our_problem->init(c_start, c_goal, param_);
 
-  auto status = solver_->OptimizeTNLP(problem_);
+  // setup the random offset generator and a (initial) offset pose
+  uniform_pose_generator offset_gen(param_);
+  pose offset = pose::Zero();
 
-  try {
-    _goal.pose = to_msg(our_problem->get_pose(), *map_).pose;
+  for (size_t ii = 0; ii != attempts_; ++ii) {
+    // set the initial offset
+    our_problem->set_offset(offset);
+
+    // try to find a solution
+    if (preProcessImpl(c_goal)) {
+      // we have found a solution
+      try {
+        _goal.pose = to_msg(c_goal, *map_).pose;
+        pose_pub_.publish(_goal);
+        return true;
+      }
+      catch (std::runtime_error &_ex) {
+        DP_WARN("cannot convert to message: " << _ex.what());
+      }
+    }
+    // sample a new offset
+    offset = offset_gen();
+
+    DP_INFO("resampled a new offset: " << offset);
   }
-  catch (std::runtime_error &_ex) {
-    DP_WARN("cannot convert to message: " << _ex.what());
-    return false;
-  }
-
-  // check the output from the optimization
-  if (status != Ipopt::Solve_Succeeded) {
-    DP_WARN("optimization failed with " << status);
-    return false;
-  }
-
-  // transform the footprint
-  const pose &curr_pose = our_problem->get_pose();
-  Eigen::Isometry2d trans(Eigen::Translation2d(curr_pose.x(), curr_pose.y()) *
-                          Eigen::Rotation2Dd(curr_pose.z()));
-  const polygon curr_footprint =
-      (trans * footprint_.cast<double>()).array().round().cast<int>().matrix();
-
-  // check the footprint for collisions
-  if (!check_footprint(*map_->getCostmap(), curr_footprint,
-                       costmap_2d::LETHAL_OBSTACLE)) {
-    DP_WARN("optimization failed: footprint in collision");
-    return false;
-  }
-
-  pose_pub_.publish(_goal);
-  return true;
+  return false;
 }
 
 using solver_ptr = Ipopt::SmartPtr<Ipopt::IpoptApplication>;
@@ -422,6 +489,8 @@ DposeGoalTolerance::initialize(const std::string &_name, Map *_map) {
   map_ = _map;
   footprint_ = make_footprint(*map_->getLayeredCostmap());
   ros::NodeHandle nh("~" + _name);
+  // load the attemps; we must have at least one try
+  attempts_ = std::max(1, nh.param("attempts", 10));
 
   // read the padding parameter and safely cast it to unsigned int
   const int padding = nh.param("padding", 2);

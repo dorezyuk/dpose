@@ -121,6 +121,7 @@ private:
   number lin_tol_sq_ = 1;  ///< squared linear tolerance in cells
   number rot_tol_sq_ = 1;  ///< squared angular tolerance in rads
   pose pose_;              ///< initial pose in cells
+  pose offset_;
 
   // cache
   number cost_;                ///< cost of the current solution
@@ -153,6 +154,11 @@ public:
   inline const pose &
   get_pose() const noexcept {
     return pose_;
+  }
+
+  inline void
+  set_offset(const pose &_offset) noexcept {
+    offset_ = _offset;
   }
 
   // ipopt functions below
@@ -215,6 +221,9 @@ struct DposeGoalTolerance : public gpp_interface::PrePlanningInterface {
   initialize(const std::string &_name, Map *_map) override;
 
 private:
+  bool
+  preProcessImpl(pose &_goal);
+
   // ipopt
   Ipopt::SmartPtr<Ipopt::TNLP> problem_;
   Ipopt::SmartPtr<Ipopt::IpoptApplication> solver_;
@@ -222,7 +231,10 @@ private:
   // ros-comm
   Map *map_ = nullptr;
   ros::Publisher pose_pub_;
+
+  // config
   dpose_core::polygon footprint_;
+  size_t attempts_;
 
   // dynamic reconfigure
   using cfg_server = dynamic_reconfigure::Server<DposeGoalToleranceConfig>;

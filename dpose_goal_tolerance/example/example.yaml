@@ -72,6 +72,8 @@ goal_tolerance:
   # disable the weights to gear the solution towards the current robot pose
   weight_start_lin: 0
   weight_start_rot: 0
+  # set the attempts (how often to retry the search with a random initial guess)
+  attempts: 10
 
 # disable the patience logic and the recoveries, since we don't want to loop
 # here (remember: we will always fail because there is no planner loaded under

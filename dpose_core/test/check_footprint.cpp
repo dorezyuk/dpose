@@ -115,21 +115,17 @@ TEST_P(rotated_line_fixture, generic) {
   }
 }
 
-// here we test that the output of x_bresenham is invariant to the order of the
-// arguments used in the constructor.
-TEST_P(rotated_line_fixture, order_invariance) {
+// here we test that the output of x_bresenham always starts with the lowest
+// y-value
+TEST(test_x_bresenham, order_invariance) {
   // generate the end
-  end << std::cos(GetParam()) * radius, std::sin(GetParam()) * radius;
+  cell end(10, 12), zero(0,0);
 
   // create two instances with swapped arguments orders
   x_bresenham up(zero, end), down(end, zero);
 
-  // check the first 10 points
-  for (size_t ii = 0; ii != 10; ++ii) {
-    EXPECT_EQ(up.get_x(), down.get_x());
-    up.advance_x();
-    down.advance_x();
-  }
+  // check the start
+  EXPECT_EQ(up.get_x(), down.get_x());
 }
 
 }  // namespace test_x_bresenham
@@ -150,7 +146,7 @@ make_hand() {
 inline polygon
 make_square() {
   polygon square(2, 4);
-  square << 10, 10, -10, -10, -10, 10, 10, -10;
+  square << 10, 10, -12, -5, -10, 8, 9, -7;
   return square;
 }
 
@@ -205,11 +201,10 @@ TEST_P(check_footprint_fixture, regression) {
   // we now check if our cost-check returns free
   EXPECT_TRUE(check_footprint(cm_, shifted_fp, costmap_2d::LETHAL_OBSTACLE));
 
-  static int counter = 0;
-  // cm_.saveMap("map_" + std::to_string(counter++) + ".pgm");
   for (const auto& cell : outline) {
     cm_.setCost(cell.x, cell.y, costmap_2d::LETHAL_OBSTACLE);
-    EXPECT_FALSE(check_footprint(cm_, shifted_fp, costmap_2d::LETHAL_OBSTACLE)) << cell.x << ", " << cell.y;
+    EXPECT_FALSE(check_footprint(cm_, shifted_fp, costmap_2d::LETHAL_OBSTACLE))
+        << cell.x << ", " << cell.y;
     cm_.setCost(cell.x, cell.y, costmap_2d::FREE_SPACE);
   }
 }

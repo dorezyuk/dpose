@@ -73,7 +73,9 @@ set(${PROJECT_NAME}_BENCHMARK "Enable benchmarking" ON)
 if(${PROJECT_NAME}_BENCHMARK)
   find_package(benchmark)
   if(benchmark_FOUND)
-    add_executable(${PROJECT_NAME}_perf perf/dpose_core.cpp)
+    add_executable(${PROJECT_NAME}_perf
+      perf/dpose_core.cpp
+      perf/dpose_costmap.cpp)
     target_link_libraries(${PROJECT_NAME}_perf benchmark::benchmark ${PROJECT_NAME})
   else()
     message("benchmark library not found")

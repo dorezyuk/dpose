@@ -422,6 +422,14 @@ check_without_area(const costmap_2d::Costmap2D &_map, const polygon &_footprint,
   }
 }
 
+/**
+ * @brief checks the outline of the _footprint
+ *
+ * @param _map The costmap.
+ * @param _footprint The footprint (closed or opened).
+ * @param _cost The cost we are looking after.
+ * @return true, if the outline does not contain a cell with _cost.
+ */
 bool
 check_outline(const costmap_2d::Costmap2D &_map, const polygon &_footprint,
               uint8_t _cost) {

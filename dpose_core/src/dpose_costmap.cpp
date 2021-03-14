@@ -247,7 +247,7 @@ x_minor_descending::operator++() noexcept {
     x_curr -= x_sign;
   }
 
-  assert(num > 0 && "bresenham failed");
+  assert(num >= 0 && "bresenham failed");
   return *this;
 }
 

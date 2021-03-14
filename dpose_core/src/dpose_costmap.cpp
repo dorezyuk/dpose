@@ -29,7 +29,6 @@
 #include <array>
 #include <cassert>
 #include <iterator>
-#include <list>
 #include <map>
 #include <memory>
 #include <numeric>
@@ -334,7 +333,7 @@ struct lines_compare {
   }
 };
 
-using lines_set = std::list<line *>;
+using lines_set = std::vector<line *>;
 
 /**
  * @brief helper function for the scan-line algorithm.
@@ -565,7 +564,10 @@ check_footprint(const costmap_2d::Costmap2D &_map, const polygon &_footprint,
         if (line->active) {
           auto iter = std::find(active_lines.begin(), active_lines.end(), line);
           assert(iter != active_lines.end() && "line not found");
-          active_lines.erase(iter);
+          // swap and pop - we don't care much for the order since we will sort
+          // the vertices again.
+          std::iter_swap(iter, std::prev(active_lines.end()));
+          active_lines.pop_back();
         }
         else {
           line->active = true;
@@ -574,7 +576,7 @@ check_footprint(const costmap_2d::Costmap2D &_map, const polygon &_footprint,
       }
     }
     // reorder the active lines after we have changed them
-    active_lines.sort(lines_compare{});
+    std::sort(active_lines.begin(), active_lines.end(), lines_compare{});
   }
   return true;
 }

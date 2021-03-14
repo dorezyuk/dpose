@@ -30,6 +30,7 @@
 
 #include <cmath>
 #include <limits>
+#include <memory>
 #include <unordered_map>
 
 namespace dpose_core {
@@ -81,8 +82,118 @@ to_rays(const cell_rectangle& _rect) noexcept;
 /// @param _map the costmap
 /// @param _bounds box in cell-space defining the ROI
 cell_vector
-lethal_cells_within(costmap_2d::Costmap2D &_map,
-                    const cell_rectangle &_bounds);
+lethal_cells_within(costmap_2d::Costmap2D& _map, const cell_rectangle& _bounds);
+
+/// @brief checks if the _footprint is entirely inside the _map.
+/// @param _map the costmap.
+/// @param _footprint the footprint (in cell-space).
+bool
+is_inside(const costmap_2d::Costmap2D& _map,
+          const polygon& _footprint) noexcept;
+
+namespace bresenham {
+
+/*
+ * customized bresenham implementation.
+ *
+ * very long story... for the scan line algorithm we perform raytracing on the
+ * outline of the polygon. as we increment the y-value on every ray, we might
+ * have to "skip" multiple cells  in lines which have a bigger x-delta: (dx >
+ * dy). these lines are called here "x_major" (the "x_minor" is their
+ * counterpart). bresenham is also "directed" (in the sense that the line from
+ * p0 to p1 might look differently then p1 to p0). we add therefore a further
+ * subclasses called "ascending" (for y0 < y1) and "descending". this allows us
+ * to stay consistent with typical ros-implementations like
+ * costmap_2d::Costmap2D::getOutlineCells.
+ */
+
+/// @brief base class for our customized bresenham iteratorion.
+struct base_iterator {
+  base_iterator(const cell& _begin, const cell& _end) noexcept;
+  virtual ~base_iterator() = default;
+
+  inline const int&
+  operator*() const noexcept {
+    return x_curr;
+  }
+
+  inline const double&
+  get_dx() const noexcept {
+    return dx;
+  }
+
+  virtual base_iterator&
+  operator++() noexcept = 0;
+
+protected:
+  int x_curr, x_sign, den, add, num;
+  double dx;
+};
+
+/// @brief implementation for lines dx < dy and y0 < y1
+struct x_minor_ascending : public base_iterator {
+  x_minor_ascending(const cell& _begin, const cell& _end);
+
+  x_minor_ascending&
+  operator++() noexcept final;
+};
+
+/// @brief implementation for lines dx < dy and y0 > y1
+struct x_minor_descending : public base_iterator {
+  x_minor_descending(const cell& _begin, const cell& _end);
+
+  x_minor_descending&
+  operator++() noexcept final;
+};
+
+/// @brief implementation for lines dx > dy and y0 < y1
+struct x_major_ascending : public base_iterator {
+  x_major_ascending(const cell& _begin, const cell& _end);
+
+  x_major_ascending&
+  operator++() noexcept final;
+};
+
+/// @brief implementation for lines dx > dy and y0 > y1
+struct x_major_descending : public base_iterator {
+  x_major_descending(const cell& begin, const cell& end);
+
+  x_major_descending&
+  operator++() noexcept final;
+};
+
+}  // namespace bresenham
+
+/**
+ * @brief Implements the bresenham-raytracing algorithm such that the get_x()
+ * method will the current x-value on a line and advance_x() increment to the
+ * next x value.
+ */
+struct x_bresenham {
+  x_bresenham(const cell& _c0, const cell& _c1) noexcept;
+
+  inline void
+  advance_x() noexcept {
+    impl_->operator++();
+  }
+
+  inline const int&
+  get_x() const noexcept {
+    return **impl_;
+  }
+
+  inline const double&
+  get_dx() const noexcept {
+    return impl_->get_dx();
+  }
+
+private:
+  std::unique_ptr<bresenham::base_iterator> impl_;
+};
+
+bool
+check_footprint(const costmap_2d::Costmap2D& _map, const polygon& _footprint,
+                uint8_t _cost);
 
 }  // namespace dpose_core
 

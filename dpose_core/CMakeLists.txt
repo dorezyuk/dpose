@@ -53,6 +53,7 @@ install(DIRECTORY src/${PROJECT_NAME}/
 if(CATKIN_ENABLE_TESTING)
   find_package(rostest)
   catkin_add_gtest(${PROJECT_NAME}_test
+    test/check_footprint.cpp
     test/cost_data.cpp
     test/jacobian_data.cpp
     test/lethal_cells_within.cpp
@@ -72,7 +73,9 @@ set(${PROJECT_NAME}_BENCHMARK "Enable benchmarking" ON)
 if(${PROJECT_NAME}_BENCHMARK)
   find_package(benchmark)
   if(benchmark_FOUND)
-    add_executable(${PROJECT_NAME}_perf perf/dpose_core.cpp)
+    add_executable(${PROJECT_NAME}_perf
+      perf/dpose_core.cpp
+      perf/dpose_costmap.cpp)
     target_link_libraries(${PROJECT_NAME}_perf benchmark::benchmark ${PROJECT_NAME})
   else()
     message("benchmark library not found")

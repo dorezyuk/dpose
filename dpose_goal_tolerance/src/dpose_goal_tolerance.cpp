@@ -374,10 +374,8 @@ private:
 
 bool
 DposeGoalTolerance::preProcessImpl(pose &_goal) {
+  // run the optimization
   auto status = solver_->OptimizeTNLP(problem_);
-  auto our_problem = dynamic_cast<problem *>(Ipopt::GetRawPtr(problem_));
-
-  // set the current _goal as initial guess
 
   // check the output from the optimization
   if (status != Ipopt::Solve_Succeeded) {
@@ -386,6 +384,7 @@ DposeGoalTolerance::preProcessImpl(pose &_goal) {
   }
 
   // transform the footprint
+  auto our_problem = dynamic_cast<problem *>(Ipopt::GetRawPtr(problem_));
   _goal = our_problem->get_pose();
   Eigen::Isometry2d trans(Eigen::Translation2d(_goal.x(), _goal.y()) *
                           Eigen::Rotation2Dd(_goal.z()));

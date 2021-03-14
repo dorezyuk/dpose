@@ -1,0 +1,44 @@
+# adjusted from https://github.com/turtlebot/turtlebot_simulator
+# we don't care in this example for the sensor scan data.
+# instead we will use a painted obstacle on the floor in order to showcase the recovery.
+
+define robot position
+(
+  pose [ 0.0 0.0 0.0 0.0 ]
+  odom_error [0.0 0.0 999999 999999 999999 0.0]
+  size [ 0.2552 0.2552 0.40 ]
+  origin [ 0.0 0.0 0.0 0.0 ]
+  gui_nose 1
+  # set this to "omni" if you want to try the recovery with an omni-directional robot.
+  drive "diff"
+  color "gray"  
+)
+
+define floorplan model
+(
+  boundary 1
+  gui_nose 0
+  gui_grid 0
+  gui_outline 0
+  gripper_return 0
+  fiducial_return 0
+)
+
+resolution 0.01
+interval_sim 50  # simulation timestep in milliseconds
+
+floorplan
+(
+  name "maze"
+  color "gray"
+  bitmap "example_map.png"
+  size [ 10.0 10.0 1.0 ]
+  pose [  0.0  0.0 0.0 0.0 ]
+)
+
+robot
+(
+  pose [ 2.0 2.0 0.0 0.0 ]
+  name "robot"
+  color "black"
+)

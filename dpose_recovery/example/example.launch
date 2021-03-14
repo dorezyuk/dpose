@@ -1,0 +1,51 @@
+<launch>
+    <param name="/use_sim_time" value="true"/>
+    <!--
+        We will use a very simple world-file.
+        Change the example/example_map.png if you want to try something else.
+        You can also adjust there the robot to act like a omni-directional-drive robot.    
+     -->
+    <arg name="world_file" default="$(find dpose_recovery)/example/example_stage.world"/>
+
+    <!--
+        Launch the stage simulator.
+        Publishes:
+            - /odom: the odometry for the robot. in our case it's without noise.
+        Subscribes
+            - cmd_vel: cmd vel provided by move_base
+    -->
+    <node pkg="stage_ros" type="stageros" name="stageros" args="$(arg world_file)">
+        <param name="base_watchdog_timeout" value="0.5"/>
+    </node>
+
+    <!--
+        Load the robot description and launch the <joint|robot>_state_publishers
+        In our case the robot has only one link: base_link
+     -->
+    <arg name="urdf_file" value="$(find xacro)/xacro '$(find dpose_recovery)/example/example.urdf.xacro'"/>
+    <param name="robot_description" command="$(arg urdf_file)"/>
+
+    <node pkg="robot_state_publisher" type="robot_state_publisher" name="robot_state_publisher">
+        <param name="publish_frequency" value="5.0" />
+    </node>
+
+    <node name="joint_state_publisher" pkg="joint_state_publisher" type="joint_state_publisher">
+        <param name="use_gui" value="true"/>
+    </node>
+
+    <!--
+        Some plugins/nodes need the "map" frame.
+        We use a fake localization by setting the map to odom transform to identity.
+        This makes only sense, if the odom noise is set to zero.
+     -->
+    <node name="transform" pkg="tf" type="static_transform_publisher" output="screen" args="0 0 0 0 0 0 map odom 10"/>
+
+    <!-- 
+        Launch the map-server and move-base
+     -->
+    <node name="map_server" pkg="map_server" type="map_server" args="$(find dpose_recovery)/example/example_map.yaml" />
+
+    <node pkg="move_base" type="move_base" respawn="false" name="move_base_node" output="screen">
+        <rosparam file="$(find dpose_recovery)/example/example.yaml" command="load"/>
+    </node>
+</launch>

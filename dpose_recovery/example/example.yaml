@@ -1,0 +1,40 @@
+# the footprint for our example: an arrow-shaped robot.
+# adjust it to your needs to play around.
+footprint:
+  [
+    [0.5, 0.1],
+    [-0.5, -0.1],
+    [-0.4, -0.8],
+    [-0.3, -0.75],
+    [-0.3, -0.25],
+    [0.5, -0.1],
+  ]
+
+# configure the local costmap. for this example we only need this map: our 
+# recovery works only this map.
+local_costmap:
+  # global_frame and robot_base_frame follow the ros-standard. we will use a
+  # small custom script to publish the ground truth from stage to tf
+  global_frame: odom
+  robot_base_frame: base_link
+  update_frequency: 1.0
+  publish_frequency: 1.0
+  # mark the costmap as rolling.
+  rolling_window: true
+  width: 5.0
+  height: 5.0
+  # disable all plugins but the static_layer: we will use the image painted on
+  # it to showcase the recovery
+  plugins:
+    - { name: static_layer, type: "costmap_2d::StaticLayer" }
+
+# the global_costmap is not used in this example. we disable all layers but the
+# static_layer.
+global_costmap:
+  global_frame: odom
+  rolling_window: false
+  plugins:
+    - { name: static_layer, type: "costmap_2d::StaticLayer" }
+
+# specify our recovery behavior
+recovery_behaviors: []

@@ -12,6 +12,7 @@
 
   <depend>angles</depend>
   <depend>costmap_2d</depend>
+  <depend>cover</depend>
   <depend>dpose_core</depend>
   <depend>dynamic_reconfigure</depend>
   <depend>gpp_interface</depend>

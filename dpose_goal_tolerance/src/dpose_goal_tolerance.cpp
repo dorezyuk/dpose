@@ -23,6 +23,7 @@
  */
 #include <dpose_goal_tolerance/dpose_goal_tolerance.hpp>
 
+#include <cover/cover.hpp>
 #include <angles/angles.h>
 #include <costmap_2d/cost_values.h>
 #include <pluginlib/class_list_macros.h>
@@ -87,6 +88,21 @@ pose_regularization::get_cost(const pose &_pose) noexcept {
   return norm_.dot(diff_.array().pow(2).matrix());
 }
 
+static cover::polygon
+make_polygon(const std::vector<geometry_msgs::Point>& f){
+  cover::polygon p(2, f.size());
+  for(int ii = 0, n_poses = f.size(); ii != n_poses; ++ii){
+    p.col(ii) << f.at(ii).x, f.at(ii).y;
+  }
+  return p;
+}
+
+static polygon
+make_footprint(costmap_2d::LayeredCostmap &_cm) {
+  const cover::polygon p = make_polygon(_cm.getFootprint());
+  return cover::to_discrete(_cm.getCostmap()->getResolution(), p);
+}
+
 problem::problem(costmap_2d::LayeredCostmap &_map, const parameter &_param) :
     costmap_(&_map), pg_(make_footprint(_map), _param) {}
 
@@ -138,7 +154,14 @@ problem::init(const pose &_start, const pose &_goal,
                    .cast<int>();
 
   // now get the lethal cells
-  lethal_cells_ = lethal_cells_within(*costmap_->getCostmap(), search_box);
+  cover::area_generator gen(search_box);
+  cover::detail::is_inside inside{*costmap_->getCostmap()};
+  cover::detail::is_lethal lethal{*costmap_->getCostmap()};
+  lethal_cells_.clear();
+  for (const auto &cell : gen) {
+    if (inside(cell) && lethal(cell))
+      lethal_cells_.emplace_back(cell);
+  }
 
   // setup the additional penalties
   regs_.clear();
@@ -372,6 +395,16 @@ private:
   uniform_pose_distribution dis;
 };
 
+static bool
+is_free(const cover::polygon &_footprint, const pose &_pose,
+        const costmap_2d::Costmap2D &_map) {
+  const Eigen::Isometry2d trans(Eigen::Translation2d(_pose.x(), _pose.y()) *
+                                Eigen::Rotation2Dd(_pose.z()));
+  const cover::polygon footprint = trans * _footprint;
+  const cover::area_generator gen(_map.getResolution(), footprint);
+  return cover::is_free(gen, _map);
+}
+
 bool
 DposeGoalTolerance::preProcessImpl(pose &_goal) {
   // run the optimization
@@ -386,14 +419,9 @@ DposeGoalTolerance::preProcessImpl(pose &_goal) {
   // transform the footprint
   auto our_problem = dynamic_cast<problem *>(Ipopt::GetRawPtr(problem_));
   _goal = our_problem->get_pose();
-  Eigen::Isometry2d trans(Eigen::Translation2d(_goal.x(), _goal.y()) *
-                          Eigen::Rotation2Dd(_goal.z()));
-  const polygon curr_footprint =
-      (trans * footprint_.cast<double>()).array().round().cast<int>().matrix();
 
   // check the footprint for collisions
-  if (!check_footprint(*map_->getCostmap(), curr_footprint,
-                       costmap_2d::LETHAL_OBSTACLE)) {
+  if (!is_free(footprint_, _goal, *map_->getCostmap())) {
     DP_WARN("optimization failed: footprint in collision");
     return false;
   }
@@ -425,6 +453,11 @@ DposeGoalTolerance::preProcess(Pose &_start, Pose &_goal) {
   catch (std::runtime_error &_ex) {
     DP_WARN("cannot transform to cells: " << _ex.what());
     return false;
+  }
+  // Check the given pose -> maybe its already free
+  if (is_free(footprint_, c_goal, *map_->getCostmap())) {
+    DP_INFO("Footprint already free");
+    return true;
   }
 
   auto our_problem = dynamic_cast<problem *>(Ipopt::GetRawPtr(problem_));
@@ -487,7 +520,7 @@ DposeGoalTolerance::initialize(const std::string &_name, Map *_map) {
   }
 
   map_ = _map;
-  footprint_ = make_footprint(*map_->getLayeredCostmap());
+  footprint_ = make_polygon(map_->getLayeredCostmap()->getFootprint());
   ros::NodeHandle nh("~" + _name);
   // load the attemps; we must have at least one try
   attempts_ = std::max(1, nh.param("attempts", 10));

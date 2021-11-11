@@ -4,6 +4,7 @@ project(dpose_goal_tolerance)
 set(CATKIN_PACKAGES
   angles
   costmap_2d
+  cover
   dpose_core
   dynamic_reconfigure
   gpp_interface

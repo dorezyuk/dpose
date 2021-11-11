@@ -10,9 +10,6 @@
 
   <buildtool_depend>catkin</buildtool_depend>
 
-  <depend>costmap_2d</depend>
-  <depend>geometry_msgs</depend>
-
   <!-- non-ros-related libs -->
   <depend>libopencv-dev</depend>
   <depend>eigen</depend>

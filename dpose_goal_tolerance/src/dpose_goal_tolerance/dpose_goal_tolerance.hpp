@@ -25,7 +25,6 @@
 #define DPOSE_GOAL_TOLERANCE__DPOSE_GOAL_TOLERANCE__HPP
 
 #include <dpose_core/dpose_core.hpp>
-#include <dpose_core/dpose_costmap.hpp>
 #include <dpose_goal_tolerance/DposeGoalToleranceConfig.h>
 
 #include <gpp_interface/pre_planning_interface.hpp>
@@ -233,7 +232,7 @@ private:
   ros::Publisher pose_pub_;
 
   // config
-  dpose_core::polygon footprint_;
+  Eigen::Matrix<double, 2, -1> footprint_;
   size_t attempts_;
 
   // dynamic reconfigure

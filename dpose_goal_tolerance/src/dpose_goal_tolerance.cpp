@@ -59,6 +59,23 @@ pose_regularization::pose_regularization(number _weight_lin,
     throw std::invalid_argument("both weights cannot be zero");
 }
 
+static pose
+world_to_map(const pose &_pose, const costmap_2d::Costmap2D &_map) {
+  unsigned int x, y;
+  if (!_map.worldToMap(_pose.x(), _pose.y(), x, y))
+    throw std::runtime_error("Failed to convert world to map");
+  return pose{static_cast<double>(x), static_cast<double>(y), _pose.z()};
+}
+
+static pose
+map_to_world(const pose &_pose, const costmap_2d::Costmap2D &_map) {
+  const Eigen::Vector2d origin{_map.getOriginX(), _map.getOriginY()};
+  pose out;
+  out.segment(0, 2) = _pose.segment(0, 2) * _map.getResolution() + origin;
+  out.z() = _pose.z();
+  return out;
+}
+
 void
 pose_regularization::init(const pose &_start, const pose &_goal) noexcept {
   // get the linear and rotational normalization weights.
@@ -305,40 +322,30 @@ problem::finalize_solution(Ipopt::SolverReturn _status, index _n,
   pose_ += p;
 }
 
-pose
-to_cell(const DposeGoalTolerance::Pose &_pose,
-        const DposeGoalTolerance::Map &_map) {
-  // check if the _goal is in the same frame as the costmap.
-  if (_pose.header.frame_id != _map.getGlobalFrameID())
-    throw std::runtime_error("pose not in the global map frame");
-
-  const auto &p = _pose.pose.position;
-  unsigned int x, y;
-  if (!_map.getCostmap()->worldToMap(p.x, p.y, x, y))
-    throw std::runtime_error("pose outside of the map");
-
+static pose
+to_pose(const DposeGoalTolerance::Pose &_pose) {
   // get yaw
   const auto yaw = tf2::getYaw(_pose.pose.orientation);
-  return pose{static_cast<number>(x), static_cast<number>(y), yaw};
+  const auto &p = _pose.pose.position;
+  return pose{p.x, p.y, yaw};
+}
+
+static const Eigen::Isometry2d
+to_isometry(const pose &_pose) {
+  return Eigen::Isometry2d{Eigen::Translation2d{_pose.x(), _pose.y()} *
+                           Eigen::Rotation2Dd{_pose.z()}};
 }
 
 DposeGoalTolerance::Pose
-to_msg(const pose &_pose, const DposeGoalTolerance::Map &_map) {
-  // check to prevent underflow
-  if ((_pose.segment(0, 2).array() < 0).any())
-    throw std::runtime_error("negative pose");
-
-  // convert to unsigned int
-  unsigned int x = std::round(_pose.x());
-  unsigned int y = std::round(_pose.y());
-
+to_msg(const pose &_pose) {
   DposeGoalTolerance::Pose msg;
 
   // get the metric data
-  _map.getCostmap()->mapToWorld(x, y, msg.pose.position.x, msg.pose.position.y);
   tf2::Quaternion q;
   q.setRPY(0, 0, _pose.z());
   msg.pose.orientation = tf2::toMsg(q);
+  msg.pose.position.x = _pose.x();
+  msg.pose.position.y = _pose.y();
 
   return msg;
 }
@@ -386,14 +393,6 @@ private:
   uniform_pose_distribution dis;
 };
 
-static bool
-is_free(const cover::polygon &_footprint, const pose &_pose,
-        const costmap_2d::Costmap2D &_map) {
-  const Eigen::Isometry2d pose(Eigen::Translation2d(_pose.x(), _pose.y()) *
-                               Eigen::Rotation2Dd(_pose.z()));
-  return cover::is_free(_footprint, pose, _map);
-}
-
 bool
 DposeGoalTolerance::preProcessImpl(pose &_goal) {
   // run the optimization
@@ -407,10 +406,10 @@ DposeGoalTolerance::preProcessImpl(pose &_goal) {
 
   // transform the footprint
   auto our_problem = dynamic_cast<problem *>(Ipopt::GetRawPtr(problem_));
-  _goal = our_problem->get_pose();
+  _goal = map_to_world(our_problem->get_pose(), *map_->getCostmap());
 
   // check the footprint for collisions
-  if (!is_free(footprint_, _goal, *map_->getCostmap())) {
+  if (!cover::is_free(footprint_, to_isometry(_goal), *map_->getCostmap())) {
     DP_WARN("optimization failed: footprint in collision");
     return false;
   }
@@ -433,24 +432,33 @@ DposeGoalTolerance::preProcess(Pose &_start, Pose &_goal) {
     return false;
   }
 
-  // convert the metric input to cells - that's what we need for the solver
-  pose c_goal, c_start;
-  try {
-    c_goal = to_cell(_goal, *map_);
-    c_start = to_cell(_start, *map_);
-  }
-  catch (std::runtime_error &_ex) {
-    DP_WARN("cannot transform to cells: " << _ex.what());
+  // Check the frame-ids. We might also transform the poses into the map frame.
+  if (_goal.header.frame_id != map_->getGlobalFrameID() ||
+      _start.header.frame_id != map_->getGlobalFrameID()) {
+    DP_WARN("Frame-ids must match");
     return false;
   }
+
+  // convert the metric input to se2 poses - that's what we need for the solver
+  pose goal = to_pose(_goal);
+  DP_INFO("Checking footprint " << footprint_);
+
   // Check the given pose -> maybe its already free
-  if (is_free(footprint_, c_goal, *map_->getCostmap())) {
+  if (cover::is_free(footprint_, to_isometry(goal), *map_->getCostmap())) {
     DP_INFO("Footprint already free");
     return true;
   }
 
   auto our_problem = dynamic_cast<problem *>(Ipopt::GetRawPtr(problem_));
-  our_problem->init(c_start, c_goal, param_);
+  try {
+    const pose m_goal = world_to_map(goal, *map_->getCostmap());
+    const pose m_start = world_to_map(to_pose(_start), *map_->getCostmap());
+    our_problem->init(m_start, m_goal, param_);
+  }
+  catch (const std::exception &ex) {
+    DP_WARN("Failed to initialize the problem: " << ex.what());
+    return false;
+  }
 
   // setup the random offset generator and a (initial) offset pose
   uniform_pose_generator offset_gen(param_);
@@ -461,16 +469,11 @@ DposeGoalTolerance::preProcess(Pose &_start, Pose &_goal) {
     our_problem->set_offset(offset);
 
     // try to find a solution
-    if (preProcessImpl(c_goal)) {
+    if (preProcessImpl(goal)) {
       // we have found a solution
-      try {
-        _goal.pose = to_msg(c_goal, *map_).pose;
-        pose_pub_.publish(_goal);
-        return true;
-      }
-      catch (std::runtime_error &_ex) {
-        DP_WARN("cannot convert to message: " << _ex.what());
-      }
+      _goal.pose = to_msg(goal).pose;
+      pose_pub_.publish(_goal);
+      return true;
     }
     // sample a new offset
     offset = offset_gen();

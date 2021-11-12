@@ -95,6 +95,8 @@ struct cost_data {
     return box;
   }
 
+  EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+
 private:
   cv::Mat cost;        ///< cost matrix
   cell center;         ///< center cell
@@ -116,6 +118,8 @@ struct interpolator {
 
   double
   get(const Eigen::Array2d& k_cell);
+
+  EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
 private:
   const Eigen::Array2d bounds;

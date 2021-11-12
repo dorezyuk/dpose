@@ -88,18 +88,9 @@ pose_regularization::get_cost(const pose &_pose) noexcept {
   return norm_.dot(diff_.array().pow(2).matrix());
 }
 
-static cover::polygon
-make_polygon(const std::vector<geometry_msgs::Point>& f){
-  cover::polygon p(2, f.size());
-  for(int ii = 0, n_poses = f.size(); ii != n_poses; ++ii){
-    p.col(ii) << f.at(ii).x, f.at(ii).y;
-  }
-  return p;
-}
-
 static polygon
 make_footprint(costmap_2d::LayeredCostmap &_cm) {
-  const cover::polygon p = make_polygon(_cm.getFootprint());
+  const cover::polygon p = cover::make_polygon(_cm.getFootprint());
   return cover::to_discrete(_cm.getCostmap()->getResolution(), p);
 }
 
@@ -398,11 +389,9 @@ private:
 static bool
 is_free(const cover::polygon &_footprint, const pose &_pose,
         const costmap_2d::Costmap2D &_map) {
-  const Eigen::Isometry2d trans(Eigen::Translation2d(_pose.x(), _pose.y()) *
-                                Eigen::Rotation2Dd(_pose.z()));
-  const cover::polygon footprint = trans * _footprint;
-  const cover::area_generator gen(_map.getResolution(), footprint);
-  return cover::is_free(gen, _map);
+  const Eigen::Isometry2d pose(Eigen::Translation2d(_pose.x(), _pose.y()) *
+                               Eigen::Rotation2Dd(_pose.z()));
+  return cover::is_free(_footprint, pose, _map);
 }
 
 bool
@@ -520,7 +509,7 @@ DposeGoalTolerance::initialize(const std::string &_name, Map *_map) {
   }
 
   map_ = _map;
-  footprint_ = make_polygon(map_->getLayeredCostmap()->getFootprint());
+  footprint_ = cover::make_polygon(map_->getLayeredCostmap()->getFootprint());
   ros::NodeHandle nh("~" + _name);
   // load the attemps; we must have at least one try
   attempts_ = std::max(1, nh.param("attempts", 10));

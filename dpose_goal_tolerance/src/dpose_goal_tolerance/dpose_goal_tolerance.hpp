@@ -87,6 +87,8 @@ struct pose_regularization {
     return J_;
   }
 
+  EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+
 private:
   // cache
   pose_gradient::jacobian J_;
